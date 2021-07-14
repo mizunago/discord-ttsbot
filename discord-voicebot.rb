@@ -9,9 +9,19 @@ MP3_DIR      = '/data/mp3'
 NAME_DIR     = '/data/name'
 
 def special_word_voice(bot, message)
-  ['船がいる', 'プレイヤー船', '敵船'].each do |word|
+  ['船がいる', '船がいます', 'プレイヤー船', '敵船'].each do |word|
     if message.include?(word)
       bot.play_file("#{MP3_DIR}/alarm.mp3")
+    end
+  end
+  ['ごまだれ'].each do |word|
+    if message.include?(word)
+      bot.play_file("#{MP3_DIR}/gomadare.mp3")
+    end
+  end
+  ['ニュータイプ'].each do |word|
+    if message.include?(word)
+      bot.play_file("#{MP3_DIR}/newtype.mp3")
     end
   end
 end
@@ -71,12 +81,11 @@ bot.message(in: TTS_CHANNELS) do |event|
 
     # pollyで作成した音声ファイルを再生
     polly = Aws::Polly::Client.new
-    message = event.message
+    message = event.message.to_s
     # メッセージ内に URL が含まれていたら読み上げない
     if message.include?('http://') or message.include?('https://')
       message = 'URL 省略'
     end
-    special_word_voice(voice_bot, message)
 
     polly.synthesize_speech({
                               response_target: "#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3",
@@ -86,6 +95,7 @@ bot.message(in: TTS_CHANNELS) do |event|
                               text_type: 'ssml',
                               voice_id: VOICE_ID
                             })
+    special_word_voice(voice_bot, message)
     voice_bot.play_file("#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3")
   end
 end
