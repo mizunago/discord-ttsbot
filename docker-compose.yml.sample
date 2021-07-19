@@ -1,0 +1,29 @@
+version: '3'
+services:
+  discord-ttsbot1:
+    build: .
+    tty: true
+    volumes:
+    - "./data:/data"
+    environment:
+      - AWS_REGION=ap-northeast-1
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+      - DISCORD_BOT_TOKEN=
+      - POLLY_VOICE_ID=Takumi
+      - COMMAND_PREFIX=!jack
+      - TTS_CHANNELS=#実験室A
+  discord-ttsbot2:
+    build: .
+    tty: true
+    volumes:
+    - "./data:/data"
+    environment:
+      - AWS_REGION=ap-northeast-1
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+      - DISCORD_BOT_TOKEN=
+      - POLLY_VOICE_ID=Mizuki
+      - COMMAND_PREFIX=!umbra
+      - TTS_CHANNELS=#実験室B,#実験室C
+
