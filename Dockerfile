@@ -10,5 +10,5 @@ WORKDIR /app
 COPY Gemfile /app/
 ENV LANG ja_JP.UTF-8
 RUN bundle install --path vendor/bundle
-COPY discord-voicebot.rb /app/
-CMD ["bundle", "exec", "ruby", "discord-voicebot.rb"]
+COPY discord_voicebot.rb /app/
+CMD ["bundle", "exec", "ruby", "discord_voicebot.rb"]

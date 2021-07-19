@@ -1,0 +1,18 @@
+AllCops:
+  TargetRubyVersion: 2.7
+
+# コメントに日本語を使う
+Style/AsciiComments:
+  Enabled: false
+
+# class にドキュメントを求めない
+Style/Documentation:
+  Enabled: false
+
+# 関数の長さをデフォルトから30行に増やす
+Metrics/MethodLength:
+  Max: 30
+
+# 関数の複雑性チェックをゆるくする
+Metrics/AbcSize:
+  Max: 40

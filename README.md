@@ -1,7 +1,7 @@
 # Setup
 ## Configure docker-compose.yml
 * AWS で Polly のフルアクセス権限がある IAM ユーザを作成、AccessKey/Secret を発行
-* Discord の開発者ポータルから Bot 用のトークンを発行、Bot を利用したいチャンネルに参加させる
+* [Discord の開発者ポータル](https://discord.com/developers/applications) から Bot 用のトークンを発行、Bot を利用したいチャンネルに参加させる
   * Privileged Gateway Intents の Presence Intent, Server Members Intent が必要っぽい？
   * OAuth2 ページで必要な権限の URL を作成して、BOT を参加させる(以下はたぶん必須)
     * Scopes: bot
