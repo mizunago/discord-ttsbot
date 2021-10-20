@@ -9,6 +9,6 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY Gemfile /app/
 ENV LANG ja_JP.UTF-8
-RUN bundle install --path vendor/bundle
+RUN bundle install
 COPY discord_voicebot.rb /app/
 CMD ["bundle", "exec", "ruby", "discord_voicebot.rb"]

@@ -83,7 +83,6 @@ class SotTime
   def print
     "#{@time.day}日 #{'%2.2d' % @time.hour}時 #{'%2.2d' % @time.min}分"
   end
-
 end
 
 class CustomBot
@@ -97,6 +96,7 @@ class CustomBot
 
   def connect(event)
     channel = event.user.voice_channel
+    @voice_channel = channel
     @txt_channel = event.channel
 
     unless channel
@@ -116,7 +116,11 @@ class CustomBot
   end
 
   def destroy(event)
-    channel = event.user.voice_channel
+    begin
+      channel = event.user.voice_channel
+    rescue StandardError
+      channel = @voice_channel
+    end
     server = event.server.resolve_id
 
     unless channel
@@ -130,20 +134,20 @@ class CustomBot
     event << '```'
     event << "ボイスチャンネル「 #{channel.name}」から切断されました"
     event << '```'
+    @voice_channel = nil
     @txt_channel = nil
   end
 
   def speak(event, actor)
     return if @txt_channel.nil?
+
     channel   = event.channel
     server    = event.server
     voice_bot = event.voice
     message = event.message.to_s
 
     # 召喚されたチャンネルと異なるテキストチャンネルは読み上げない
-    if channel.name != @txt_channel.name
-      return
-    end
+    return if channel.name != @txt_channel.name
 
     # ボイスチャット接続していないときは抜ける
     return if voice_bot.nil?
@@ -199,6 +203,14 @@ class CustomBot
       voice_bot.play_file("#{MP3_DIR}/newtype.mp3") if message.include?(word)
     end
   end
+
+  def disconnect_when_no_one(event)
+    channel = event.channel
+    if @voice_channel && (@voice_channel.users.size == 1 && @voice_channel.users[0].name.include?('BOT'))
+      event.bot.send_message(@txt_channel, "ボイスチャンネル  #{@voice_channel.name}  から誰もいなくなったので切断します")
+      destroy(event)
+    end
+  end
 end
 
 # DB 接続はシングルトン
@@ -236,6 +248,10 @@ end
 
 bot.message(in: TTS_CHANNELS) do |event|
   bot_func.speak(event, POLLY_VOICE_ID)
+end
+
+bot.voice_state_update do |event|
+  bot_func.disconnect_when_no_one(event)
 end
 
 bot.run
