@@ -1,5 +1,9 @@
 version: '3'
 services:
+  voicevox:
+    image: hiroshiba/voicevox_engine:cpu-ubuntu20.04-latest
+    ports:
+      - '50021:50021'
   discord-ttsbot1:
     build: .
     tty: true
@@ -11,10 +15,13 @@ services:
       - AWS_SECRET_ACCESS_KEY=
       - DISCORD_BOT_TOKEN=
       - POLLY_VOICE_ID=Takumi
+      - VOICEVOX_VOICE_ID=metan
       - COMMAND_PREFIX=!jack
-      - TTS_CHANNELS=#実験室A
+      - TTS_CHANNELS=#同鯖全体連絡用,#同鯖全体聞き専,#同鯖aチーム,#同鯖aチーム,#同鯖bチーム,#同鯖cチーム,#同鯖dチーム,#同鯖eチーム,#同鯖fチーム,#ガレオン01-船内チャット,#ガレオン02-船内チャット,#ガレオン03-船内チャット,#ガレオン04-船内チャット,#ガレオン05-船内チャット,#ブリガン01-船内チャット,#ブリガン02-船内チャット,#ブリガン03-船内チャット,#スループ01-船内チャット,#スループ02-船内チャット,#アリーナ,#実験室
+      #- TTS_CHANNELS=#実験室
   discord-ttsbot2:
     build: .
+    #image: 552161665941.dkr.ecr.ap-northeast-1.amazonaws.com/discord-ttsbot:latest
     tty: true
     volumes:
     - "./data:/data"
@@ -24,6 +31,8 @@ services:
       - AWS_SECRET_ACCESS_KEY=
       - DISCORD_BOT_TOKEN=
       - POLLY_VOICE_ID=Mizuki
+      - VOICEVOX_VOICE_ID=zundamon
       - COMMAND_PREFIX=!umbra
-      - TTS_CHANNELS=#実験室B,#実験室C
+      - TTS_CHANNELS=#同鯖全体連絡用,#同鯖全体聞き専,#同鯖aチーム,#同鯖aチーム,#同鯖bチーム,#同鯖cチーム,#同鯖dチーム,#同鯖eチーム,#同鯖fチーム,#ガレオン01-船内チャット,#ガレオン02-船内チャット,#ガレオン03-船内チャット,#ガレオン04-船内チャット,#ガレオン05-船内チャット,#ブリガン01-船内チャット,#ブリガン02-船内チャット,#ブリガン03-船内チャット,#スループ01-船内チャット,#スループ02-船内チャット,#アリーナ,#実験室
+      #- TTS_CHANNELS=#実験室
 

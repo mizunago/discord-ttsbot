@@ -11,4 +11,5 @@ COPY Gemfile /app/
 ENV LANG ja_JP.UTF-8
 RUN bundle install
 COPY discord_voicebot.rb /app/
+COPY voicevox.rb /app/
 CMD ["bundle", "exec", "ruby", "discord_voicebot.rb"]

@@ -7,6 +7,9 @@ require 'aws-sdk-polly'
 require 'active_support'
 require 'active_support/core_ext'
 require 'sqlite3'
+require 'pp'
+require 'tempfile'
+require_relative 'voicevox'
 
 %w[DISCORD_BOT_TOKEN POLLY_VOICE_ID TTS_CHANNELS COMMAND_PREFIX].each do |require_param|
   if ENV[require_param].nil?
@@ -19,6 +22,7 @@ DISCORD_BOT_TOKEN = ENV['DISCORD_BOT_TOKEN']
 POLLY_VOICE_ID = ENV['POLLY_VOICE_ID']
 TTS_CHANNELS = ENV['TTS_CHANNELS'].split(',')
 COMMAND_PREFIX = ENV['COMMAND_PREFIX']
+VOICEVOX_VOICE_ID = ENV['VOICEVOX_VOICE_ID']
 
 SAMPLE_RATE = '16000'
 MP3_DIR      = '/data/mp3'
@@ -109,7 +113,7 @@ class CustomBot
     # ボイスチャンネルにbotを接続
     @bot.voice_connect(channel)
     event << '```'
-    event << "ボイスチャンネル「 #{channel.name}」に接続しました。"
+    event << "ボイスチャンネル「#{channel.name}」に接続しました。"
     event << "「#{@cmd_prefix} help」でコマンド一覧を確認できます"
     event << "「#{@cmd_prefix} chname 名前」で読み上げてもらう名前を変更することができます"
     event << '```'
@@ -138,7 +142,7 @@ class CustomBot
     @txt_channel = nil
   end
 
-  def speak(event, actor)
+  def speak(event, actor, voicevox_actor)
     return if @txt_channel.nil?
 
     channel   = event.channel
@@ -166,19 +170,29 @@ class CustomBot
     # メッセージ内に URL が含まれていたら読み上げない
     message = 'URL 省略' if message.include?('http://') || message.include?('https://')
 
-    # pollyで作成した音声ファイルを再生
-    @polly.synthesize_speech(
-      {
-        response_target: "#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3",
-        output_format: 'mp3',
-        sample_rate: SAMPLE_RATE,
-        text: "<speak>#{speaker_name} さんの発言、>#{message}</speak>",
-        text_type: 'ssml',
-        voice_id: actor
-      }
-    )
+    message_template = "#{speaker_name} さんの発言、#{message}"
     special_word_voice(event, message)
-    voice_bot.play_file("#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3")
+    # voicevox を試してだめだったら AWS Polly を使う
+    begin
+      path = "#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.wav"
+      open(path, 'wb') do |fd|
+        fd.write(Voicevox.speak(message_template, voicevox_actor.to_sym))
+      end
+      voice_bot.play_file(path)
+    rescue StandardError
+      # polly で作成した音声ファイルを再生
+      @polly.synthesize_speech(
+        {
+          response_target: "#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3",
+          output_format: 'mp3',
+          sample_rate: SAMPLE_RATE,
+          text: "<speak>#{message_template}</speak>",
+          text_type: 'ssml',
+          voice_id: actor
+        }
+      )
+      voice_bot.play_file("#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3")
+    end
   end
 
   def chname(event, name)
@@ -247,7 +261,7 @@ bot.command(:chname,
 end
 
 bot.message(in: TTS_CHANNELS) do |event|
-  bot_func.speak(event, POLLY_VOICE_ID)
+  bot_func.speak(event, POLLY_VOICE_ID, VOICEVOX_VOICE_ID)
 end
 
 bot.voice_state_update do |event|
