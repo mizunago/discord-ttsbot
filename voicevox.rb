@@ -65,7 +65,7 @@ class Voicevox
   end
 end
 
-if __FILE__ == PROGRAM_NAME
+if __FILE__ == $PROGRAM_NAME
   open('/tmp/test.wav', 'wb') do |fd|
     fd.write Voicevox.speak('これはテストなのだ', :zundamon)
   end

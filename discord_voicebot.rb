@@ -116,6 +116,7 @@ class CustomBot
     event << "ボイスチャンネル「#{channel.name}」に接続しました。"
     event << "「#{@cmd_prefix} help」でコマンド一覧を確認できます"
     event << "「#{@cmd_prefix} chname 名前」で読み上げてもらう名前を変更することができます"
+    event << "VOICEVOX:四国めたん VOICEVOX:ずんだもん"
     event << '```'
   end
 
@@ -147,14 +148,17 @@ class CustomBot
 
     channel   = event.channel
     server    = event.server
-    voice_bot = event.voice
     message = event.message.to_s
+    voice_bot = begin
+                  event.voice
+                rescue
+                  nil
+                end
+    # ボイスチャット接続していないときは抜ける
+    return if voice_bot.nil?
 
     # 召喚されたチャンネルと異なるテキストチャンネルは読み上げない
     return if channel.name != @txt_channel.name
-
-    # ボイスチャット接続していないときは抜ける
-    return if voice_bot.nil?
     # 入力されたのがコマンド文字だったら抜ける
     return unless /^[^#{@cmd_prefix}]/ =~ message
 
@@ -241,9 +245,20 @@ bot.command(:connect,
   bot_func.connect(event)
 end
 
+bot.command(:s,
+            description: '読み上げbotを接続中の音声チャンネルに参加させます',
+            usage: "#{COMMAND_PREFIX} s") do |event|
+  bot_func.connect(event)
+end
+
 bot.command(:destroy,
             description: '音声チャンネルに参加している読み上げbotを切断します',
             usage: "#{COMMAND_PREFIX} destroy") do |event|
+  bot_func.destroy(event)
+end
+bot.command(:bye,
+            description: '音声チャンネルに参加している読み上げbotを切断します',
+            usage: "#{COMMAND_PREFIX} bye") do |event|
   bot_func.destroy(event)
 end
 
