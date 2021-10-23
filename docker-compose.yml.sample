@@ -1,7 +1,7 @@
 version: '3'
 services:
   voicevox:
-    image: hiroshiba/voicevox_engine:cpu-ubuntu20.04-0.7.0
+    image: hiroshiba/voicevox_engine:cpu-ubuntu20.04-latest
     ports:
       - '50021:50021'
   discord-ttsbot1:
