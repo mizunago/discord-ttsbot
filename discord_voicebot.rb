@@ -77,7 +77,7 @@ class SotTime
   end
 
   def day
-    correct = 7
+    correct = 0
     min_count = @time.min / 24.0
     min_count += 1
     days = @time.hour % 12 * 60 / 24.0
@@ -265,7 +265,7 @@ end
 bot.command(:in_game_time,
             description: 'ゲーム内の時間を表示します',
             usage: "#{COMMAND_PREFIX} in_game_time") do |event|
-  event << "ゲーム内は「#{SotTime.new(Time.now).print}」です"
+  event << "ゲーム内は「#{SotTime.new(Time.now.utc).print}」です"
 end
 
 bot.command(:chname,
