@@ -18,6 +18,9 @@ services:
       - VOICEVOX_VOICE_ID=metan
       - COMMAND_PREFIX=!jack
       - TTS_CHANNELS=#同鯖全体連絡用,#同鯖全体聞き専,#同鯖aチーム,#同鯖aチーム,#同鯖bチーム,#同鯖cチーム,#同鯖dチーム,#同鯖eチーム,#同鯖fチーム,#ガレオン01-船内チャット,#ガレオン02-船内チャット,#ガレオン03-船内チャット,#ガレオン04-船内チャット,#ガレオン05-船内チャット,#ブリガン01-船内チャット,#ブリガン02-船内チャット,#ブリガン03-船内チャット,#スループ01-船内チャット,#スループ02-船内チャット,#アリーナ,#実験室
+      - DEEPL_AUTH_KEY=AUTH KEY HERE
+      - SRC_TRANS_CHANNELS=#game-updates,#official-announcements,#release-notes,#live-events
+      - DST_TRANS_CHANNELS=#メンテナンス情報などのお知らせ,#イベント情報,#アップデート情報,#イベント情報
       #- TTS_CHANNELS=#実験室
   discord-ttsbot2:
     build: .

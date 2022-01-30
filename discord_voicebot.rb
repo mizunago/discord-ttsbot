@@ -10,6 +10,7 @@ require 'sqlite3'
 require 'pp'
 require 'tempfile'
 require_relative 'voicevox'
+require_relative 'deepl_trans'
 
 %w[DISCORD_BOT_TOKEN POLLY_VOICE_ID TTS_CHANNELS COMMAND_PREFIX].each do |require_param|
   if ENV[require_param].nil?
@@ -23,6 +24,10 @@ POLLY_VOICE_ID = ENV['POLLY_VOICE_ID']
 TTS_CHANNELS = ENV['TTS_CHANNELS'].split(',')
 COMMAND_PREFIX = ENV['COMMAND_PREFIX']
 VOICEVOX_VOICE_ID = ENV['VOICEVOX_VOICE_ID']
+USE_TRANSLATOR = !ENV['DEEPL_AUTH_KEY'].nil?
+DEEPL_AUTH_KEY= ENV['DEEPL_AUTH_KEY']
+SRC_TRANS_CHANNELS = ENV['SRC_TRANS_CHANNELS'].split(',')
+#DST_TRANS_CHANNELS = ENV['DST_TRANS_CHANNELS'].split(',')
 
 SAMPLE_RATE = '16000'
 MP3_DIR      = '/data/mp3'
@@ -143,6 +148,13 @@ class CustomBot
     @txt_channel = nil
   end
 
+  def trans(event, deepl)
+    channel = event.channel
+    message = event.message.to_s
+
+    event << deepl.trans(message)
+  end
+
   def speak(event, actor, voicevox_actor)
     return if @txt_channel.nil?
 
@@ -236,6 +248,7 @@ db = db_connect_and_create
 
 bot = Discordrb::Commands::CommandBot.new(token: DISCORD_BOT_TOKEN, prefix: "#{COMMAND_PREFIX} ")
 bot_func = CustomBot.new(bot, db, { prefix: COMMAND_PREFIX })
+deepl = Trans.new(DEEPL_AUTH_KEY)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
 
@@ -277,6 +290,12 @@ end
 
 bot.message(in: TTS_CHANNELS) do |event|
   bot_func.speak(event, POLLY_VOICE_ID, VOICEVOX_VOICE_ID)
+end
+
+bot.message(in: SRC_TRANS_CHANNELS) do |event|
+  if USE_TRANSLATOR
+    bot_func.trans(event, deepl)
+  end
 end
 
 bot.voice_state_update do |event|
