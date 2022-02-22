@@ -23,15 +23,14 @@ class Trans
       puts res.body
       raise
     end
-    trans_msg = begin
-                  json = JSON.parse(res.body, symbolize_names: true)
-                  json[:translations].first[:text]
-                rescue
-                  puts "failed translator"
-                  ''
-                  raise
-                end
-    trans_msg
+    begin
+      json = JSON.parse(res.body, symbolize_names: true)
+      json[:translations].first[:text]
+    rescue StandardError
+      puts 'failed translator'
+      ''
+      raise
+    end
   end
 end
 
@@ -39,4 +38,3 @@ if __FILE__ == $PROGRAM_NAME
   t = Trans.new('DEEPL AUTH KEY HERE')
   puts t.trans('very rare and exclusive hat')
 end
-

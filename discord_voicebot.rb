@@ -9,6 +9,7 @@ require 'active_support/core_ext'
 require 'sqlite3'
 require 'pp'
 require 'tempfile'
+require 'open-uri'
 require_relative 'voicevox'
 require_relative 'deepl_trans'
 
@@ -25,9 +26,9 @@ TTS_CHANNELS = ENV['TTS_CHANNELS'].split(',')
 COMMAND_PREFIX = ENV['COMMAND_PREFIX']
 VOICEVOX_VOICE_ID = ENV['VOICEVOX_VOICE_ID']
 USE_TRANSLATOR = !ENV['DEEPL_AUTH_KEY'].nil?
-DEEPL_AUTH_KEY= ENV['DEEPL_AUTH_KEY']
+DEEPL_AUTH_KEY = ENV['DEEPL_AUTH_KEY']
 SRC_TRANS_CHANNELS = ENV['SRC_TRANS_CHANNELS'].split(',')
-#DST_TRANS_CHANNELS = ENV['DST_TRANS_CHANNELS'].split(',')
+# DST_TRANS_CHANNELS = ENV['DST_TRANS_CHANNELS'].split(',')
 
 SAMPLE_RATE = '16000'
 MP3_DIR      = '/data/mp3'
@@ -121,7 +122,7 @@ class CustomBot
     event << "ボイスチャンネル「#{channel.name}」に接続しました。"
     event << "「#{@cmd_prefix} help」でコマンド一覧を確認できます"
     event << "「#{@cmd_prefix} chname 名前」で読み上げてもらう名前を変更することができます"
-    event << "VOICEVOX:四国めたん VOICEVOX:ずんだもん"
+    event << 'VOICEVOX:四国めたん VOICEVOX:ずんだもん'
     event << '```'
   end
 
@@ -162,10 +163,10 @@ class CustomBot
     server    = event.server
     message = event.message.to_s
     voice_bot = begin
-                  event.voice
-                rescue
-                  nil
-                end
+      event.voice
+    rescue StandardError
+      nil
+    end
     # ボイスチャット接続していないときは抜ける
     return if voice_bot.nil?
 
@@ -190,6 +191,7 @@ class CustomBot
     special_word_voice(event, message)
     # voicevox を試してだめだったら AWS Polly を使う
     begin
+      raise
       path = "#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.wav"
       open(path, 'wb') do |fd|
         fd.write(Voicevox.speak(message_template, voicevox_actor.to_sym))
@@ -241,6 +243,7 @@ class CustomBot
       destroy(event)
     end
   end
+
 end
 
 # DB 接続はシングルトン
@@ -284,7 +287,7 @@ end
 bot.command(:chname,
             min_args: 1, max_args: 1,
             description: 'botに読み上げられる自分の名前を設定します',
-            usage: "#{COMMAND_PREFIX} chname ギャザラ") do |event, name|
+            usage: "#{COMMAND_PREFIX} chname [名前（ひらがななど）]") do |event, name|
   bot_func.chname(event, name)
 end
 
@@ -293,8 +296,113 @@ bot.message(in: TTS_CHANNELS) do |event|
 end
 
 bot.message(in: SRC_TRANS_CHANNELS) do |event|
-  if USE_TRANSLATOR
-    bot_func.trans(event, deepl)
+  bot_func.trans(event, deepl) if USE_TRANSLATOR
+end
+
+bot.message(in: '#自動ロール付与') do |event|
+  next unless COMMAND_PREFIX.include?('jack')
+
+  message = event.message
+  user = message.author
+  notice = ''
+  role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  role ||= event.server.create_role
+  role.name = '乗船待機中'
+  if message.to_s.include?('解除')
+    user.remove_role(role)
+    notice = event.respond("おう、#{user.nick}は船を降りるのか。またな！")
+  else
+    user.add_role(role)
+    notice = event.respond("よお新入り。お前は#{user.nick}っていうのか。乗船希望名簿に入れておくぜ")
+  end
+  message.delete
+  sleep 10
+  notice.delete
+end
+
+bot.message(in: '#呪われし者の酒場') do |event|
+  next unless COMMAND_PREFIX.include?('jack')
+
+  message = event.message
+  # 画像添付をチェック
+  images = message.attachments
+  if images.size.zero?
+    message.delete
+    r = event.respond('おい、画像の添付をわすれてるようだぞ')
+    sleep 10
+    r.delete
+    next
+  end
+
+  unless images[0].image?
+    message.delete
+    r = event.respond('おい、画像じゃないもんを送りつけないでくれ')
+    sleep 10
+    r.delete
+    next
+  end
+  url = images[0].url
+  filename = "temp#{File.extname(url)}"
+  URI.open(url) do |f|
+    open(filename, 'wb') do |fd|
+      fd.write(f.read)
+    end
+  end
+
+  # ロールの読み出し
+  message = event.message
+  user = message.author
+  notice = ''
+  role = event.server.roles.find { |r| r.name == '伝説の海賊' }
+  unless role
+    role = event.server.create_role
+    role.name = '伝説の海賊'
+  end
+
+  # 名前がルール通りかチェック
+  name = nil
+  [/(?<=\().*?(?=\))/, /(?<=（).*?(?=）)/].each do |reg|
+    name = user.nick.slice(reg)
+    break unless name.nil?
+  end
+  if name.nil? or name.empty?
+    notice = event.respond("えーっと、お前さんの名前は・・・？\n名前は #※必読-初めて参加した方へ の通りに付けてるよな？\n俺が適当にお前の名前を付けてやってもいいんだが…")
+    next
+  end
+
+  # ローカルに画像を保存
+  filename = "temp#{File.extname(url)}"
+  URI.open(url) do |f|
+    open(filename, 'wb') do |fd|
+      fd.write(f.read)
+    end
+  end
+  # 画像から文字を抽出
+  result = system("convert -threshold 50000 #{filename} #{filename}")
+  result = system("tesseract #{filename} out -l jpn")
+  unless result
+    notice = event.respond('すまねえがイカスミ野郎のせいで文字が読めないんだ。管理人を呼んでくれ')
+    next
+  end
+  caption_text = ''
+  open('out.txt', 'rb') do |fd|
+    caption_text = fd.read.force_encoding('utf-8').encode!
+  end
+  puts caption_text
+  puts name
+
+  flag1 = caption_text.include?(name)
+  flag2 = caption_text.include?('伝説の海賊')
+
+  if flag1 && flag2
+    user.add_role(role)
+    notice = event.respond("#{user.nick}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
+    message.create_reaction('🍺') # ビール
+    message.create_reaction('🎉') # クラッカー
+  elsif flag2
+    notice = event.respond("すまねえ、スクリーンショットの名前と君のこのサーバーでの名前が一致していないようだ…。\n名前は #※必読-初めて参加した方へ の通りに付けてるよな？\nもし正しい画像をアップロードしたんだったら管理人に見てもらってくれ")
+  else
+    notice = event.respond("すまねえ、俺には読めない文字で書かれているようだ。\n背景がゴチャゴチャしていると、読みづれぇんだ。\nもし正しい画像をアップロードしたんだったら管理人に見てもらってくれ")
   end
 end
 

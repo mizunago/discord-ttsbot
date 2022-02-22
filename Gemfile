@@ -10,5 +10,6 @@ gem 'discordrb', github: 'shardlab/discordrb', branch: 'main'
 gem 'sqlite3'
 
 group :development do
+  gem 'pry', require: false
   gem 'rubocop', require: false
 end

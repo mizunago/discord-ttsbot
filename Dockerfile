@@ -1,11 +1,17 @@
-FROM ruby:2.7.3
+FROM ruby:2.7.5
 RUN apt-get update && apt-get install -y \
     locales \
     locales-all \
     libopus-dev \
     ffmpeg \
     libopus0 \
-    libsodium-dev
+    libsodium-dev \
+    software-properties-common \
+    imagemagick
+RUN apt-get update && apt-get install -y tesseract-ocr libtesseract-dev tesseract-ocr-jpn  tesseract-ocr-script-jpan \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY Gemfile /app/
 ENV LANG ja_JP.UTF-8
