@@ -243,7 +243,6 @@ class CustomBot
       destroy(event)
     end
   end
-
 end
 
 # DB 接続はシングルトン
@@ -308,16 +307,44 @@ bot.message(in: '#自動ロール付与') do |event|
   role = event.server.roles.find { |r| r.name == '乗船待機中' }
   role ||= event.server.create_role
   role.name = '乗船待機中'
-  if message.to_s.include?('解除')
+  if message.to_s.include?('解除') or message.to_s.include?('下船')
     user.remove_role(role)
-    notice = event.respond("おう、#{user.nick}は船を降りるのか。またな！")
+    notice = event.respond("おう、#{user.nick || user.username}は船を降りるのか。またな！")
   else
     user.add_role(role)
-    notice = event.respond("よお新入り。お前は#{user.nick}っていうのか。乗船希望名簿に入れておくぜ")
+    notice = event.respond("よお新入り。お前は#{user.nick || user.username}っていうのか。乗船希望名簿に入れておくぜ")
   end
   message.delete
   sleep 10
   notice.delete
+end
+
+bot.reaction_add do |event|
+  next unless COMMAND_PREFIX.include?('jack')
+
+  # なごなごのユーザーID＆絵文字のアテナ＆特定チャンネルでのみ発動
+  if event.user.id == 311_482_797_053_444_106 && event.emoji.id == 577_368_513_375_633_429 && event.channel.name == '呪われし者の酒場'
+    role = event.server.roles.find { |r| r.name == '伝説の海賊' }
+    message = event.message
+    user = event.message.author
+    message.respond("すまねえな！確認に時間がかかっちまった。#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
+    message.create_reaction('🍺') # ビール
+    message.create_reaction('🎉') # クラッカー
+  end
+end
+
+bot.message do |event|
+  next unless COMMAND_PREFIX.include?('jack')
+
+  role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  user = event.author
+
+  if event.channel.name.include?('船員募集-') or event.channel.name.include?('実験室')
+    regex = event.message.to_s.match(/[＠@][1-9１－９]/)
+    if regex
+      event.message.respond("<@&#{role.id}> のみんな！ #{event.channel.name} で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
+    end
+  end
 end
 
 bot.message(in: '#呪われし者の酒場') do |event|
@@ -362,12 +389,13 @@ bot.message(in: '#呪われし者の酒場') do |event|
   # 名前がルール通りかチェック
   name = nil
   [/(?<=\().*?(?=\))/, /(?<=（).*?(?=）)/].each do |reg|
-    name = user.nick.slice(reg)
-    break unless name.nil?
+    unless user.nick.nil?
+      name = user.nick.slice(reg)
+      break unless name.nil?
+    end
   end
   if name.nil? or name.empty?
     notice = event.respond("えーっと、お前さんの名前は・・・？\n名前は #※必読-初めて参加した方へ の通りに付けてるよな？\n俺が適当にお前の名前を付けてやってもいいんだが…")
-    next
   end
 
   # ローカルに画像を保存
@@ -378,7 +406,7 @@ bot.message(in: '#呪われし者の酒場') do |event|
     end
   end
   # 画像から文字を抽出
-  result = system("convert -threshold 50000 #{filename} #{filename}")
+  result = system("convert -threshold 40000 #{filename} #{filename}")
   result = system("tesseract #{filename} out -l jpn")
   unless result
     notice = event.respond('すまねえがイカスミ野郎のせいで文字が読めないんだ。管理人を呼んでくれ')
@@ -391,18 +419,20 @@ bot.message(in: '#呪われし者の酒場') do |event|
   puts caption_text
   puts name
 
-  flag1 = caption_text.include?(name)
+  flag1 = caption_text.include?(name) unless name.nil?
+  flag1 ||= caption_text.include?(user.username)
+  flag1 = caption_text.include?(user.nick) if !flag1 && !user.nick.nil?
   flag2 = caption_text.include?('伝説の海賊')
 
   if flag1 && flag2
     user.add_role(role)
-    notice = event.respond("#{user.nick}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
+    notice = event.respond("#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
     message.create_reaction('🍺') # ビール
     message.create_reaction('🎉') # クラッカー
   elsif flag2
-    notice = event.respond("すまねえ、スクリーンショットの名前と君のこのサーバーでの名前が一致していないようだ…。\n名前は #※必読-初めて参加した方へ の通りに付けてるよな？\nもし正しい画像をアップロードしたんだったら管理人に見てもらってくれ")
+    notice = event.respond("すまねえ、スクリーンショットの名前と君のこのサーバーでの名前が一致していないようだ…。\nもし正しい画像をアップロードしたんだったら管理人に読んでもらうからちょっと待っていてくれ")
   else
-    notice = event.respond("すまねえ、俺には読めない文字で書かれているようだ。\n背景がゴチャゴチャしていると、読みづれぇんだ。\nもし正しい画像をアップロードしたんだったら管理人に見てもらってくれ")
+    notice = event.respond("すまねえ、俺には読めない文字で書かれているようだ。\n背景がゴチャゴチャしていると、読みづれぇんだ。\nもし正しい画像をアップロードしたんだったら管理人に読んでもらうからちょっと待っていてくれ")
   end
 end
 
