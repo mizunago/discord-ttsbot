@@ -34,6 +34,31 @@ SAMPLE_RATE = '16000'
 MP3_DIR      = '/data/mp3'
 NAME_DIR     = '/data/name'
 
+EMOJI_A = '🇦'
+EMOJI_B = '🇧'
+EMOJI_C = '🇨'
+EMOJI_D = '🇩'
+EMOJI_E = '🇪'
+EMOJI_2 = '2️⃣'
+EMOJI_3 = '3️⃣'
+EMOJI_4 = '4️⃣'
+EMOJI_POINT_UP = '☝️'
+EMOJI_SIME = '✅'
+EMOJI_BEER = '🍺'
+EMOJI_PARTY_POPPER = '🎉'
+
+def group_div(user_num, number_of_member)
+  sub_num = 0
+  return sub_num if (user_num % (number_of_member - 1)).zero?
+
+  loop do
+    user_num -= number_of_member
+    sub_num += 1
+    break if (user_num % (number_of_member - 1)).zero?
+  end
+  sub_num
+end
+
 def db_connect_and_create
   sqlite = SQLite3::Database.new('/data/discord.db')
   sql = <<-SQL
@@ -243,6 +268,109 @@ class CustomBot
       destroy(event)
     end
   end
+
+  def collect_member(event)
+    org = event.message
+    r = event.respond(
+      "メンバーリストを作成します。希望するグループをエモートで反応してください\n" +
+      "また、誰か1グループの最大人数を数字で反応してください（#{EMOJI_2}: スループ、#{EMOJI_3}: ブリガンティン, #{EMOJI_4}: ガレオン）\n" +
+      "完了したら#{EMOJI_SIME}でリアクションしてください\n" +
+      '※注意：グループ希望は1人1つまでにしてください(重複投票チェックはしていません)'
+    )
+    org.create_reaction(EMOJI_A)
+    org.create_reaction(EMOJI_B)
+    org.create_reaction(EMOJI_C)
+    org.create_reaction(EMOJI_D)
+    org.create_reaction(EMOJI_E)
+    org.create_reaction(EMOJI_2)
+    org.create_reaction(EMOJI_3)
+    org.create_reaction(EMOJI_4)
+    org.create_reaction(EMOJI_POINT_UP)
+    org.create_reaction(EMOJI_SIME)
+  end
+
+  def allocate_member(event)
+    message = event.message
+    author = event.message.author
+    event.respond(
+      "今リアクションの付いているメンバーでメンバーリストを作成します\n" +
+      "再作成するには、決定リアクションを付け直してください\n" +
+      "端数が出る場合にはできるだけ過半数の船になるように割り振ります。\n" +
+      'もし船の数がオーバーする場合はリアクションを移動して対応してください'
+    )
+    # １船あたりの最大人数を取得
+    number_of_member = 4
+    emoji_map = [EMOJI_2, EMOJI_3, EMOJI_4]
+    emoji_count = []
+    emoji_map.each_with_index do |emoji, num|
+      emoji_count[num] = message.reacted_with(emoji).size
+    end
+    number_of_member = case emoji_count.index(emoji_count.max)
+                       when 0
+                         2
+                       when 1
+                         3
+                       when 2
+                         4
+                       else
+                         raise
+                       end
+
+    emoji_map = {
+      EMOJI_A.to_s => [],
+      EMOJI_B.to_s => [],
+      EMOJI_C.to_s => [],
+      EMOJI_D.to_s => [],
+      EMOJI_E.to_s => []
+    }
+    emoji_map.keys.each do |key|
+      emoji_map[key] = message.reacted_with(key).reject { |u| u.current_bot? }
+    end
+
+    groups = {}
+    group_num = 0
+    team_names = ('A'..'Z').to_a.map { |alphabet| "#{alphabet}チーム" }
+
+    emoji_map.each do |_key, users|
+      if (users.size % number_of_member).zero?
+        # event.message.respond("メンバー数が定員ちょうどです")
+        users.shuffle.each_slice(number_of_member) do |members|
+          groups[group_num] = members
+          group_num += 1
+        end
+      elsif (users.size % number_of_member) > number_of_member / 2
+        # 余りの人数が過半数を超える場合は１人欠けチームがいることを許容する
+        # event.message.respond("余りの人数が過半数を超える場合は１人欠けチームを作ります")
+        users.shuffle.each_slice(number_of_member) do |members|
+          groups[group_num] = members
+          group_num += 1
+        end
+      else
+        # 余りの人数が過半数を超えない場合
+        # event.message.respond("余りの人数が過半数を超えないので、最大人数グループといくつかの一人欠けグループを作ります")
+        group_div(users.size, number_of_member).times do
+          # 最大人数のグループを作る
+          groups[group_num] = users.pop(number_of_member)
+          group_num += 1
+        end
+        # 一人欠けグループを作る
+        users.shuffle.each_slice(number_of_member - 1) do |members|
+          groups[group_num] = members
+          group_num += 1
+        end
+      end
+    end
+
+    team_results = groups.map do |num, members|
+      members = members.map do |m|
+        "<@!#{m.id}> さん"
+      end
+      "#{team_names[num]}: #{members.join('、　')}"
+    end
+    event.message.respond('----- チームの編成です-----')
+    event.message.respond(team_results.join("\n"))
+    event.message.respond('--------')
+  end
 end
 
 # DB 接続はシングルトン
@@ -322,6 +450,16 @@ end
 bot.reaction_add do |event|
   next unless COMMAND_PREFIX.include?('jack')
 
+  if event.channel.name == '同鯖メンバー表（主催以外は基本書き込み禁止）' or event.channel.name == '実験室'
+    if event.emoji.name == EMOJI_POINT_UP && !event.user.current_bot?
+      bot_func.collect_member(event)
+      next
+    elsif event.emoji.name == EMOJI_SIME && !event.user.current_bot?
+      bot_func.allocate_member(event)
+      next
+    end
+  end
+
   # なごなごのユーザーID＆絵文字のアテナ＆特定チャンネルでのみ発動
   if event.user.id == 311_482_797_053_444_106 && event.emoji.id == 577_368_513_375_633_429 && event.channel.name == '呪われし者の酒場'
     role = event.server.roles.find { |r| r.name == '伝説の海賊' }
@@ -340,7 +478,7 @@ bot.message do |event|
   user = event.author
 
   if event.channel.name.include?('船員募集-') or event.channel.name.include?('実験室')
-    regex = event.message.to_s.match(/[＠@][1-9１－９]/)
+    regex = event.message.to_s.match(/([＠@][1-9１－９])*募集/)
     if regex
       event.message.respond("<@&#{role.id}> のみんな！ #{event.channel.name} で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
     end
@@ -427,12 +565,12 @@ bot.message(in: '#呪われし者の酒場') do |event|
   if flag1 && flag2
     user.add_role(role)
     notice = event.respond("#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
-    message.create_reaction('🍺') # ビール
-    message.create_reaction('🎉') # クラッカー
+    message.create_reaction(EMOJI_BEER) # ビール
+    message.create_reaction(EMOJI_PARTY_POPPER) # クラッカー
   elsif flag2
     notice = event.respond("すまねえ、スクリーンショットの名前と君のこのサーバーでの名前が一致していないようだ…。\nもし正しい画像をアップロードしたんだったら管理人に読んでもらうからちょっと待っていてくれ")
   else
-    notice = event.respond("すまねえ、俺には読めない文字で書かれているようだ。\n背景がゴチャゴチャしていると、読みづれぇんだ。\nもし正しい画像をアップロードしたんだったら管理人に読んでもらうからちょっと待っていてくれ")
+    notice = event.respond("すまねえ、俺には読めなかった。\nイカスミ野郎のせいだと思うんだ\nもし正しい画像をアップロードしたんだったら管理人に読んでもらうからちょっと待っていてくれ")
   end
 end
 
