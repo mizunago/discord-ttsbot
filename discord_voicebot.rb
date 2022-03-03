@@ -46,6 +46,7 @@ EMOJI_POINT_UP = '☝️'
 EMOJI_SIME = '✅'
 EMOJI_BEER = '🍺'
 EMOJI_PARTY_POPPER = '🎉'
+EMOJI_HAND = '✋'
 
 def group_div(user_num, number_of_member)
   sub_num = 0
@@ -108,7 +109,7 @@ class SotTime
   end
 
   def day
-    correct = 0
+    correct = 7
     min_count = @time.min / 24.0
     min_count += 1
     days = @time.hour % 12 * 60 / 24.0
@@ -275,7 +276,7 @@ class CustomBot
       "メンバーリストを作成します。希望するグループをエモートで反応してください\n" +
       "また、誰か1グループの最大人数を数字で反応してください（#{EMOJI_2}: スループ、#{EMOJI_3}: ブリガンティン, #{EMOJI_4}: ガレオン）\n" +
       "完了したら#{EMOJI_SIME}でリアクションしてください\n" +
-      '※注意：グループ希望は1人1つまでにしてください(重複投票チェックはしていません)'
+      '※注意：グループ希望は1人1つまでにしてください(重複投票チェックはしていません) このメッセージは10秒後に消えます'
     )
     org.create_reaction(EMOJI_A)
     org.create_reaction(EMOJI_B)
@@ -287,12 +288,14 @@ class CustomBot
     org.create_reaction(EMOJI_4)
     org.create_reaction(EMOJI_POINT_UP)
     org.create_reaction(EMOJI_SIME)
+    sleep 10
+    r.delete
   end
 
   def allocate_member(event)
     message = event.message
     author = event.message.author
-    event.respond(
+    r = event.respond(
       "今リアクションの付いているメンバーでメンバーリストを作成します\n" +
       "再作成するには、決定リアクションを付け直してください\n" +
       "端数が出る場合にはできるだけ過半数の船になるように割り振ります。\n" +
@@ -367,9 +370,14 @@ class CustomBot
       end
       "#{team_names[num]}: #{members.join('、　')}"
     end
-    event.message.respond('----- チームの編成です-----')
-    event.message.respond(team_results.join("\n"))
-    event.message.respond('--------')
+    event.message.respond(
+      "----- チームの編成です-----\n" +
+      team_results.join("\n") +
+      "--------\n" +
+      "※再編成したい場合は#{EMOJI_SIME}リアクションを付け直してください"
+    )
+    sleep 10
+    r.delete
   end
 end
 
@@ -450,6 +458,7 @@ end
 bot.reaction_add do |event|
   next unless COMMAND_PREFIX.include?('jack')
 
+  # 同鯖のメンバー割り振り機能
   if event.channel.name == '同鯖メンバー表（主催以外は基本書き込み禁止）' or event.channel.name == '実験室'
     if event.emoji.name == EMOJI_POINT_UP && !event.user.current_bot?
       bot_func.collect_member(event)
@@ -461,13 +470,39 @@ bot.reaction_add do |event|
   end
 
   # なごなごのユーザーID＆絵文字のアテナ＆特定チャンネルでのみ発動
+  # 伝説の海賊の手動認定処理
   if event.user.id == 311_482_797_053_444_106 && event.emoji.id == 577_368_513_375_633_429 && event.channel.name == '呪われし者の酒場'
     role = event.server.roles.find { |r| r.name == '伝説の海賊' }
-    message = event.message
     user = event.message.author
+    user.add_role(role)
+    message = event.message
     message.respond("すまねえな！確認に時間がかかっちまった。#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
     message.create_reaction('🍺') # ビール
     message.create_reaction('🎉') # クラッカー
+  end
+
+  # 乗船待機中ロール付与
+  if (event.channel.name == '自動ロール付与' or event.channel.name == '実験室') && event.emoji.name == EMOJI_HAND
+    role = event.server.roles.find { |r| r.name == '乗船待機中' }
+    user = event.user
+    begin
+      user.add_role(role)
+    rescue StandardError
+      nil
+    end
+  end
+end
+
+bot.reaction_remove do |event|
+  # 乗船待機中ロール付与
+  if (event.channel.name == '自動ロール付与' or event.channel.name == '実験室') && event.emoji.name == EMOJI_HAND
+    role = event.server.roles.find { |r| r.name == '乗船待機中' }
+    user = event.user
+    begin
+      user.remove_role(role)
+    rescue StandardError
+      nil
+    end
   end
 end
 
