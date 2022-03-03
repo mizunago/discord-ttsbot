@@ -93,7 +93,7 @@ end
 
 class SotTime
   def initialize(time)
-    @time = time
+    @time = Time.at(time.to_i).utc
   end
 
   def sec
@@ -105,19 +105,19 @@ class SotTime
   end
 
   def hour
-    (@time.hour % 2).zero? ? (@time.min + 12) % 24 : @time.min % 24
+    (@time.hour % 2).zero? ? @time.min % 24 : (@time.min + 12) % 24
   end
 
   def day
-    correct = 7
+    correct = -1
     min_count = @time.min / 24.0
     min_count += 1
     days = @time.hour % 12 * 60 / 24.0
-    ((days + min_count + correct) % 30).round
+    ((days + min_count + correct) % 30).round + 1
   end
 
   def print
-    "#{@time.day}日 #{'%2.2d' % @time.hour}時 #{'%2.2d' % @time.min}分"
+    "#{day}日 #{'%2.2d' % hour}時 #{'%2.2d' % min}分"
   end
 end
 
@@ -416,6 +416,7 @@ end
 bot.command(:in_game_time,
             description: 'ゲーム内の時間を表示します',
             usage: "#{COMMAND_PREFIX} in_game_time") do |event|
+  event << "現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です"
   event << "ゲーム内は「#{SotTime.new(Time.now.utc).print}」です"
 end
 
