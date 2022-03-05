@@ -47,6 +47,13 @@ EMOJI_SIME = '✅'
 EMOJI_BEER = '🍺'
 EMOJI_PARTY_POPPER = '🎉'
 EMOJI_HAND = '✋'
+EMOJI_GOLD_HOARDERS = 'Gold_Hoarders'
+EMOJI_MERCHANT_ALLIANCE = 'Merchant_Alliance'
+EMOJI_ORDER_OF_SOULS = 'Order_of_Souls'
+EMOJI_ATHENAS_FORTUNE = 'Athenas_Fortune'
+EMOJI_REAPERS_BONES = 'Reapers_Bones'
+EMOJI_BILGE_RAT = 'Bilge_Rat'
+EMOJI_HUNTERS_CALL = 'Hunters_Call'
 
 def group_div(user_num, number_of_member)
   sub_num = 0
@@ -58,6 +65,27 @@ def group_div(user_num, number_of_member)
     break if (user_num % (number_of_member - 1)).zero?
   end
   sub_num
+end
+
+def emoji_name(event)
+  case event.emoji.name
+  when EMOJI_HAND
+    '乗船待機中'
+  when EMOJI_GOLD_HOARDERS
+    'ゴールド・ホーダー'
+  when EMOJI_MERCHANT_ALLIANCE
+    'マーチャント・アライアンス'
+  when EMOJI_ORDER_OF_SOULS
+    'オーダー・オブ・ソウル'
+  when EMOJI_ATHENAS_FORTUNE
+    'アテナ・フォーチュン'
+  when EMOJI_REAPERS_BONES
+    'リーパーズ・ボーン'
+  when EMOJI_BILGE_RAT
+    'ビルジ・ラット'
+  when EMOJI_HUNTERS_CALL
+    'ハンターズ・コール'
+  end
 end
 
 def db_connect_and_create
@@ -113,7 +141,7 @@ class SotTime
     min_count = @time.min / 24.0
     min_count += 1
     days = @time.hour % 12 * 60 / 24.0
-    ((days + min_count + correct) % 30).round + 1
+    ((days + min_count + correct) % 30).round
   end
 
   def print
@@ -482,10 +510,12 @@ bot.reaction_add do |event|
     message.create_reaction('🎉') # クラッカー
   end
 
-  # 乗船待機中ロール付与
-  if (event.channel.name == '自動ロール付与' or event.channel.name == '実験室') && event.emoji.name == EMOJI_HAND
-    role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  # ロール付与
+  if event.channel.name == '自動ロール付与' or event.channel.name == '実験室'
     user = event.user
+    role = event.server.roles.find { |r| r.name == emoji_name(event) }
+    next unless role
+
     begin
       user.add_role(role)
     rescue StandardError
@@ -495,10 +525,12 @@ bot.reaction_add do |event|
 end
 
 bot.reaction_remove do |event|
-  # 乗船待機中ロール付与
-  if (event.channel.name == '自動ロール付与' or event.channel.name == '実験室') && event.emoji.name == EMOJI_HAND
-    role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  # ロール解除
+  if event.channel.name == '自動ロール付与' or event.channel.name == '実験室'
     user = event.user
+    role = event.server.roles.find { |r| r.name == emoji_name(event) }
+    next unless role
+
     begin
       user.remove_role(role)
     rescue StandardError
