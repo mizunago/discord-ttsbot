@@ -216,6 +216,7 @@ class CustomBot
     channel   = event.channel
     server    = event.server
     message = event.message.to_s
+    user = event.user
     voice_bot = begin
       event.voice
     rescue StandardError
@@ -241,7 +242,11 @@ class CustomBot
     # メッセージ内に URL が含まれていたら読み上げない
     message = 'URL 省略' if message.include?('http://') || message.include?('https://')
 
-    message_template = "#{speaker_name} さんの発言、#{message}"
+    message_template = if user.id == @last_user&.id
+                         message
+                       else
+                         "#{speaker_name} さんの発言、#{message}"
+                       end
     special_word_voice(event, message)
     # voicevox を試してだめだったら AWS Polly を使う
     begin
@@ -265,6 +270,8 @@ class CustomBot
       )
       voice_bot.play_file("#{MP3_DIR}/#{server.resolve_id}_#{channel.resolve_id}_speech.mp3")
     end
+    # 最後に読み上げた人を記録
+    @last_user = event.user
   end
 
   def chname(event, name)
@@ -546,9 +553,10 @@ bot.message do |event|
   user = event.author
 
   if event.channel.name.include?('船員募集-') or event.channel.name.include?('実験室')
-    regex = event.message.to_s.match(/([＠@][1-9１－９])*募集/)
-    if regex
-      event.message.respond("<@&#{role.id}> のみんな！ #{event.channel.name} で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
+    regex = /([＠@(あと)]+[1-9１-９]+[人名]*)募集/
+    matched = event.message.to_s.match(regex)
+    if matched
+      event.message.respond("<@&#{role.id}> のみんな！ <##{event.channel.id}> で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
     end
   end
 end
