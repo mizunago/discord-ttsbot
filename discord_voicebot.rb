@@ -2,6 +2,9 @@
 
 require 'bundler'
 Bundler.require
+require 'googleauth'
+require 'googleauth/stores/file_token_store'
+require 'google/apis/calendar_v3'
 require 'discordrb'
 require 'aws-sdk-polly'
 require 'active_support'
@@ -10,6 +13,7 @@ require 'sqlite3'
 require 'pp'
 require 'tempfile'
 require 'open-uri'
+require 'rufus-scheduler'
 require_relative 'voicevox'
 require_relative 'deepl_trans'
 
@@ -54,6 +58,7 @@ EMOJI_ATHENAS_FORTUNE = 'Athenas_Fortune'
 EMOJI_REAPERS_BONES = 'Reapers_Bones'
 EMOJI_BILGE_RAT = 'Bilge_Rat'
 EMOJI_HUNTERS_CALL = 'Hunters_Call'
+EMOJI_HUNTRESS_FLAG = 'Huntress_Flag'
 
 def group_div(user_num, number_of_member)
   sub_num = 0
@@ -85,6 +90,8 @@ def emoji_name(event)
     'ビルジ・ラット'
   when EMOJI_HUNTERS_CALL
     'ハンターズ・コール'
+  when EMOJI_HUNTRESS_FLAG
+    'イベントハンター'
   end
 end
 
@@ -311,7 +318,7 @@ class CustomBot
       "メンバーリストを作成します。希望するグループをエモートで反応してください\n" +
       "また、誰か1グループの最大人数を数字で反応してください（#{EMOJI_2}: スループ、#{EMOJI_3}: ブリガンティン, #{EMOJI_4}: ガレオン）\n" +
       "完了したら#{EMOJI_SIME}でリアクションしてください\n" +
-      '※注意：グループ希望は1人1つまでにしてください(重複投票チェックはしていません) このメッセージは10秒後に消えます'
+      '※注意：グループ希望は1人1つまでにしてください(重複投票チェックはしていません) このメッセージは90秒後に消えます'
     )
     org.create_reaction(EMOJI_A)
     org.create_reaction(EMOJI_B)
@@ -323,7 +330,7 @@ class CustomBot
     org.create_reaction(EMOJI_4)
     org.create_reaction(EMOJI_POINT_UP)
     org.create_reaction(EMOJI_SIME)
-    sleep 10
+    sleep 90
     r.delete
   end
 
@@ -405,13 +412,14 @@ class CustomBot
       end
       "#{team_names[num]}: #{members.join('、　')}"
     end
+    user = event.user
     event.message.respond(
-      "----- チームの編成です-----\n" +
+      "----- チームの編成です(#{user.nick || user.username} さんが実行しました)-----\n" +
       team_results.join("\n") +
-      "--------\n" +
+      "\n--------\n" +
       "※再編成したい場合は#{EMOJI_SIME}リアクションを付け直してください"
     )
-    sleep 10
+    sleep 60
     r.delete
   end
 end
@@ -654,4 +662,72 @@ bot.voice_state_update do |event|
   bot_func.disconnect_when_no_one(event)
 end
 
-bot.run
+bot.run :async
+# bot.run
+OOB_URI = 'urn:ietf:wg:oauth:2.0:oob'
+scope = 'https://www.googleapis.com/auth/calendar'
+calendar_id = 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com'
+authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
+  json_key_io: File.open('secret.json'),
+  scope: scope
+)
+
+s = bot.servers[406_456_641_593_016_320]
+ch = s.text_channels.find { |c| c.name == 'イベント情報' }
+
+scheduler = Rufus::Scheduler.new
+
+scheduler.cron '0 19 * * *' do
+  next unless COMMAND_PREFIX.include?('jack')
+
+  authorizer.fetch_access_token!
+
+  service = Google::Apis::CalendarV3::CalendarService.new
+  service.authorization = authorizer
+
+  base_time = DateTime.now
+
+  response = service.list_events(calendar_id,
+                                 max_results: 10,
+                                 single_events: true,
+                                 order_by: 'startTime',
+                                 time_min: base_time.rfc3339)
+  start_events = response.items.select do |item|
+    # 本日開始のイベント
+    (base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
+  end
+
+  if start_events.size > 0
+    role = event.server.roles.find { |r| r.name == 'イベントハンター' }
+    event.message.respond("<@&#{role.id}> のみんな！新しいイベント情報情報だ！")
+  end
+
+  start_events.each do |item|
+    message = "---- 本日開始のイベント ----
+■イベント名: #{item.summary}
+■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始まで <t:#{item.start.date_time.to_time.to_i}:R>
+■内容：
+#{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
+----
+"
+    m = ch.send_message(message)
+  end
+
+  end_events = response.items.select do |item|
+    # 明日終了のイベント
+    ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time)
+  end
+
+  end_events.each do |item|
+    message = "---- 明日終了のイベント ----
+■イベント名: #{item.summary}
+■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 終了まで <t:#{item.end.date_time.to_time.to_i}:R>
+■内容：
+#{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
+----
+"
+    m = ch.send_message(message)
+  end
+end
+
+scheduler.join
