@@ -560,8 +560,13 @@ bot.message do |event|
   role = event.server.roles.find { |r| r.name == '乗船待機中' }
   user = event.author
 
-  if event.channel.name.include?('船員募集-') or event.channel.name.include?('実験室')
+  if event.channel.name.include?('船員募集') or event.channel.name.include?('実験室')
     regex = /([＠@(あと)]+[1-9１-９]+[人名]*)募集/
+    matched = event.message.to_s.match(regex)
+    if matched
+      event.message.respond("<@&#{role.id}> のみんな！ <##{event.channel.id}> で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
+    end
+    regex = /(募集.*[＠@(あと)]+[1-9１-９]+[人名]*)/
     matched = event.message.to_s.match(regex)
     if matched
       event.message.respond("<@&#{role.id}> のみんな！ <##{event.channel.id}> で #{user.nick || user.username} の海賊船が船乗りを募集中だってよ！")
@@ -677,7 +682,7 @@ ch = s.text_channels.find { |c| c.name == 'イベント情報' }
 
 scheduler = Rufus::Scheduler.new
 
-scheduler.cron '0 19 * * *' do
+scheduler.cron '0 18 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   authorizer.fetch_access_token!
@@ -698,8 +703,8 @@ scheduler.cron '0 19 * * *' do
   end
 
   if start_events.size > 0
-    role = event.server.roles.find { |r| r.name == 'イベントハンター' }
-    event.message.respond("<@&#{role.id}> のみんな！新しいイベント情報情報だ！")
+    role = s.roles.find { |r| r.name == 'イベントハンター' }
+    ch.send_message("<@&#{role.id}> のみんな！新しいイベント情報だ！")
   end
 
   start_events.each do |item|
@@ -715,7 +720,7 @@ scheduler.cron '0 19 * * *' do
 
   end_events = response.items.select do |item|
     # 明日終了のイベント
-    ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time)
+    ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time) && !(base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
   end
 
   end_events.each do |item|
