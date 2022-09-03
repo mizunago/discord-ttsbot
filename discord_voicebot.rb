@@ -17,7 +17,7 @@ require 'rufus-scheduler'
 require_relative 'voicevox'
 require_relative 'deepl_trans'
 
-%w[DISCORD_BOT_TOKEN POLLY_VOICE_ID TTS_CHANNELS COMMAND_PREFIX].each do |require_param|
+%w[DISCORD_BOT_TOKEN POLLY_VOICE_ID COMMAND_PREFIX].each do |require_param|
   if ENV[require_param].nil?
     puts "#{require_param} is required."
     exit(1)
@@ -26,7 +26,6 @@ end
 
 DISCORD_BOT_TOKEN = ENV['DISCORD_BOT_TOKEN']
 POLLY_VOICE_ID = ENV['POLLY_VOICE_ID']
-TTS_CHANNELS = ENV['TTS_CHANNELS'].split(',')
 COMMAND_PREFIX = ENV['COMMAND_PREFIX']
 VOICEVOX_VOICE_ID = ENV['VOICEVOX_VOICE_ID']
 USE_TRANSLATOR = !ENV['DEEPL_AUTH_KEY'].nil?
@@ -116,6 +115,11 @@ def db_connect_and_create
       id text primary key,
       name text not null default ''
     );
+
+    create table registered_events (
+      id text primary key,
+      name text not null default ''
+    );
   SQL
 
   begin
@@ -144,11 +148,7 @@ class SotTime
   end
 
   def day
-    correct = -1
-    min_count = @time.min / 24.0
-    min_count += 1
-    days = @time.hour % 12 * 60 / 24.0
-    ((days + min_count + correct) % 30).round
+    (@time.to_i / (24 * 60) % 30 + 1).round
   end
 
   def print
@@ -174,6 +174,12 @@ class CustomBot
       event << '```'
       event << 'ボイスチャンネルに接続されていません'
       event << '```'
+      return
+    end
+
+    # ユーザー数制限のあるチャンネルには接続しない
+    unless @voice_channel.user_limit.zero?
+      event << '人数制限のあるチャンネルにはBOTを呼ぶことはできません「人数無制限」の船で呼んでください'
       return
     end
 
@@ -304,11 +310,82 @@ class CustomBot
     end
   end
 
+  def connect_when_create_command(event)
+    return unless COMMAND_PREFIX.include?('jack')
+
+    channel = event.channel
+    return unless channel
+
+    name = channel.name
+    return unless channel.name
+    return unless name.include?('作成')
+
+    size = nil
+    ship_type = ''
+    if name.include?('ガレオン')
+      ship_type = 'ガレオン'
+      size = 4
+    elsif name.include?('ブリガンティン')
+      ship_type = 'ブリガンティン'
+      size = 3
+    elsif name.include?('スループ')
+      ship_type = 'スループ'
+      size = 2
+    elsif name.include?('人数無制限')
+      ship_type = '人数無制限'
+      size = nil
+    end
+    server = event.server
+
+    # チャンネル作成
+    categories = event.server.categories.select { |ch| ch.name.include?(ship_type) }
+    room_number = categories.size + 1
+    cr_ch = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :category)
+    voice = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :voice, user_limit: size,
+                                                                                         parent: cr_ch)
+
+    # 順番を自動作成カテゴリの下に配置する
+    role_only = server.categories.find { |ch| ch.name == '自動作成' }
+    cr_ch.sort_after(role_only)
+
+    # 作った人をそのチャンネルに放り込む
+    server.move(event.user, voice)
+  end
+
   def disconnect_when_no_one(event)
+    sleep 5
+    server = event.server
     channel = event.channel
     if @voice_channel && (@voice_channel.users.size == 1 && @voice_channel.users[0].name.include?('BOT'))
-      event.bot.send_message(@txt_channel, "ボイスチャンネル  #{@voice_channel.name}  から誰もいなくなったので切断します")
+      # event.bot.send_message(@txt_channel, "ボイスチャンネル  #{@voice_channel.name}  から誰もいなくなったので切断します")
       destroy(event)
+    end
+
+    return unless COMMAND_PREFIX.include?('jack')
+
+    # 船名の入ったカテゴリを探す
+    chs = server.categories.select do |ch|
+      name = ch.name
+      name.include?('ガレオン') or name.include?('ブリガン') or name.include?('スループ') or name.include?('人数無制限')
+    end
+
+    # 不要になったチャンネルを削除する
+    chs.each do |channel|
+      # 作成から１分以上経っているか
+      next unless Time.now > channel.creation_time + 3.seconds
+
+      delete_flag = false
+      channel.voice_channels.each do |voice_ch|
+        delete_flag = true if voice_ch.users.size.zero?
+      end
+      next unless delete_flag
+
+      channel.children.each do |child_ch|
+        child_ch.delete
+      rescue Discordrb::Errors::UnknownChannel
+        nil
+      end
+      channel.delete
     end
   end
 
@@ -470,7 +547,7 @@ bot.command(:chname,
   bot_func.chname(event, name)
 end
 
-bot.message(in: TTS_CHANNELS) do |event|
+bot.message do |event|
   bot_func.speak(event, POLLY_VOICE_ID, VOICEVOX_VOICE_ID)
 end
 
@@ -664,6 +741,7 @@ bot.message(in: '#呪われし者の酒場') do |event|
 end
 
 bot.voice_state_update do |event|
+  bot_func.connect_when_create_command(event)
   bot_func.disconnect_when_no_one(event)
 end
 
@@ -697,6 +775,40 @@ scheduler.cron '0 18 * * *' do
                                  single_events: true,
                                  order_by: 'startTime',
                                  time_min: base_time.rfc3339)
+  start_events = response.items
+  start_events.each do |item|
+    Discordrb::API::Server.create_scheduled_event(
+      bot.token,
+      s.id,
+      nil, # channel_id (external のときは nil)
+      { "location": 'ゲーム内' }, # metadata
+      item.summary, # イベント名
+      2, # privacy_level(2 => :guild_only)
+      item.start.date_time.to_time.iso8601, # scheduled_start_time
+      item.end.date_time.to_time.iso8601, # scheduled_end_time
+      item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし', # description
+      3, # entity_type(1 => :stage, 2 => :voice, 3 => :external)
+      1, # status(1 => :scheduled, 2 => :active, 3 => :completed, 4 => :canceled)
+      nil # image
+    )
+  end
+end
+
+scheduler.cron '0 18 * * *' do
+  next unless COMMAND_PREFIX.include?('jack')
+
+  authorizer.fetch_access_token!
+
+  service = Google::Apis::CalendarV3::CalendarService.new
+  service.authorization = authorizer
+
+  base_time = DateTime.now
+
+  response = service.list_events(calendar_id,
+                                 max_results: 10,
+                                 single_events: true,
+                                 order_by: 'startTime',
+                                 time_min: base_time.rfc3339)
   start_events = response.items.select do |item|
     # 本日開始のイベント
     (base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
@@ -705,12 +817,12 @@ scheduler.cron '0 18 * * *' do
   if start_events.size > 0
     role = s.roles.find { |r| r.name == 'イベントハンター' }
     ch.send_message("<@&#{role.id}> のみんな！新しいイベント情報だ！")
+    ch.send_message('---- 本日開始のイベント ----')
   end
 
   start_events.each do |item|
-    message = "---- 本日開始のイベント ----
-■イベント名: #{item.summary}
-■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始まで <t:#{item.start.date_time.to_time.to_i}:R>
+    message = "■イベント名: #{item.summary}
+■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始: <t:#{item.start.date_time.to_time.to_i}:R> 終了: <t:#{item.end.date_time.to_time.to_i}:R>
 ■内容：
 #{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
 ----
@@ -718,14 +830,15 @@ scheduler.cron '0 18 * * *' do
     m = ch.send_message(message)
   end
 
+  ch.send_message('---- 明日終了のイベント ----') if end_events.size > 0
+
   end_events = response.items.select do |item|
     # 明日終了のイベント
     ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time) && !(base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
   end
 
   end_events.each do |item|
-    message = "---- 明日終了のイベント ----
-■イベント名: #{item.summary}
+    message = "■イベント名: #{item.summary}
 ■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 終了まで <t:#{item.end.date_time.to_time.to_i}:R>
 ■内容：
 #{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
