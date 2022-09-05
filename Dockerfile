@@ -20,4 +20,6 @@ COPY discord_voicebot.rb /app/
 COPY voicevox.rb /app/
 COPY deepl_trans.rb /app/
 COPY secret.json /app/
+COPY twitch_secret.yml /app/
+COPY youtube_secret.yml /app/
 CMD ["bundle", "exec", "ruby", "discord_voicebot.rb"]

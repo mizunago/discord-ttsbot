@@ -13,6 +13,7 @@ gem 'googleauth'
 gem 'rufus-scheduler'
 gem 'sanitize'
 gem 'sqlite3'
+gem 'twitch-api', git: 'https://github.com/mauricew/ruby-twitch-api'
 
 group :development do
   gem 'pry', require: false

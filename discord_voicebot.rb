@@ -2,6 +2,7 @@
 
 require 'bundler'
 Bundler.require
+require 'digest'
 require 'googleauth'
 require 'googleauth/stores/file_token_store'
 require 'google/apis/calendar_v3'
@@ -11,9 +12,13 @@ require 'active_support'
 require 'active_support/core_ext'
 require 'sqlite3'
 require 'pp'
+require 'yaml'
 require 'tempfile'
 require 'open-uri'
 require 'rufus-scheduler'
+require 'twitch-api'
+require 'net/http'
+require 'uri'
 require_relative 'voicevox'
 require_relative 'deepl_trans'
 
@@ -95,7 +100,9 @@ def emoji_name(event)
 end
 
 def db_connect_and_create
-  sqlite = SQLite3::Database.new('/data/discord.db')
+  file_name = '/data/discord.db'
+  # File.delete(file_name) if File.exist?(file_name)
+  sqlite = SQLite3::Database.new(file_name)
   sql = <<-SQL
     create table special_word_list (
       keyword text primary key,
@@ -119,6 +126,10 @@ def db_connect_and_create
     create table registered_events (
       id text primary key,
       name text not null default ''
+    );
+
+    create table last_twitch_crawler_times (
+      id integer primary key
     );
   SQL
 
@@ -756,11 +767,121 @@ authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
 )
 
 s = bot.servers[406_456_641_593_016_320]
-ch = s.text_channels.find { |c| c.name == 'イベント情報' }
 
 scheduler = Rufus::Scheduler.new
 
-scheduler.cron '0 18 * * *' do
+scheduler.cron '*/3 * * * *' do
+  next unless COMMAND_PREFIX.include?('jack')
+
+  config = YAML.load(File.open('twitch_secret.yml')).with_indifferent_access
+
+  client = Twitch::Client.new(
+    client_id: config[:client_id],
+    client_secret: config[:client_secret]
+  )
+
+  ch = s.text_channels.find { |c| c.name == '配信情報' }
+
+  # pp client.get_games(name: 'Sea of Thieves').data
+  base_time = Time.now
+
+  select_sql = 'SELECT id FROM last_twitch_crawler_times ORDER BY id DESC LIMIT 1'
+  results = db.execute(select_sql)
+  last_checked_time = Time.at(0)
+  results.each do |row|
+    last_checked_time = Time.at(row[0].to_i)
+  end
+
+  blacklists = ['simonshisha32k']
+
+  client.get_streams(game_id: 490_377, language: 'ja').data.each do |stream|
+    # 前回チェックから現在までに始まった配信でなければ無視する
+    next unless (last_checked_time..base_time).cover?(stream.started_at)
+    next if blacklists.include?(stream.instance_variable_get(:@user_login))
+
+    message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
+配信名： #{stream.title}
+URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
+※参加型配信でない可能性があります。またガイド禁止などのチャットルールを守り視聴・コメントしてください"
+    ch.send_message(message)
+  end
+
+  config = YAML.load(File.open('youtube_secret.yml')).with_indifferent_access
+  query = {
+    key: config[:key],
+    part: 'snippet',
+    type: 'video',
+    eventType: 'live',
+    regionCode: 'JP',
+    maxResults: '1',
+    order: 'date',
+    #q: 'Sea of Thieves',
+    q: 'Dead by Daylight',
+  }
+
+  uri = URI.parse('https://www.googleapis.com/youtube/v3/search')
+  uri.query = URI.encode_www_form(query)
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  req = Net::HTTP::Get.new(uri.request_uri)
+  res = http.request(req)
+  body = begin
+    JSON.parse(res.body).with_indifferent_access
+  rescue StandardError => e
+    raise
+  end
+  # デバッグ
+  puts uri.request_uri
+
+  next if body[:items].nil?
+
+  body[:items].each do |stream|
+    url = "https://www.youtube.com/watch?v=#{stream[:id][:videoId]}"
+    snippet = stream[:snippet]
+    title = snippet[:title]
+    description = snippet[:description]
+    channelTitle = snippet[:channelTitle]
+    query2 = {
+      key: config[:key],
+      part: 'liveStreamingDetails',
+      id: stream[:id][:videoId]
+    }
+
+    uri2 = URI.parse('https://www.googleapis.com/youtube/v3/videos')
+    uri2.query = URI.encode_www_form(query2)
+    req = Net::HTTP::Get.new(uri2.request_uri)
+    # デバッグ
+    puts uri2.request_uri
+    res = http.request(req)
+    begin
+      body = JSON.parse(res.body).with_indifferent_access
+      start_at = Time.parse(body[:items][0][:liveStreamingDetails][:actualStartTime])
+    rescue StandardError => e
+      raise
+    end
+
+    # 前回チェックから現在までに始まった配信でなければ無視する
+    next unless (last_checked_time..base_time).cover?(start_at)
+
+    # タイトルと概要欄に日本語が含まれているか？
+    # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
+    regex = /(?:\p{Hiragana}|\p{Katakana})/
+    next unless title =~ regex && description =~ regex
+
+    message = "#{channelTitle}さんの配信が始まりました
+配信名： #{title}
+URL: #{url}
+※参加型配信でない可能性があります。またガイド禁止などのチャットルールを守り視聴・コメントしてください"
+    ch.send_message(message)
+  end
+
+  # 最後に実行時間を記録して終了する
+  db.execute('DELETE FROM last_twitch_crawler_times')
+  insert_sql = 'INSERT INTO last_twitch_crawler_times VALUES(?)'
+  db.execute(insert_sql, base_time.to_i)
+end
+
+scheduler.cron '0 */2 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   authorizer.fetch_access_token!
@@ -777,26 +898,39 @@ scheduler.cron '0 18 * * *' do
                                  time_min: base_time.rfc3339)
   start_events = response.items
   start_events.each do |item|
-    Discordrb::API::Server.create_scheduled_event(
-      bot.token,
-      s.id,
-      nil, # channel_id (external のときは nil)
-      { "location": 'ゲーム内' }, # metadata
-      item.summary, # イベント名
-      2, # privacy_level(2 => :guild_only)
-      item.start.date_time.to_time.iso8601, # scheduled_start_time
-      item.end.date_time.to_time.iso8601, # scheduled_end_time
-      item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし', # description
-      3, # entity_type(1 => :stage, 2 => :voice, 3 => :external)
-      1, # status(1 => :scheduled, 2 => :active, 3 => :completed, 4 => :canceled)
-      nil # image
-    )
+    # 開始済みのイベントはイベント登録しない
+    next if item.start.date_time.to_time < Time.now
+
+    begin
+      insert_sql = 'INSERT INTO registered_events VALUES(?, ?)'
+      sha256 = Digest::SHA256.new
+      sha256.update(item.summary)
+      sha256.update(item.start.date_time.to_time.iso8601)
+      db.execute(insert_sql, sha256.hexdigest, item.summary)
+      Discordrb::API::Server.create_scheduled_event(
+        bot.token,
+        s.id,
+        nil, # channel_id (external のときは nil)
+        { "location": 'ゲーム内' }, # metadata
+        item.summary, # イベント名
+        2, # privacy_level(2 => :guild_only)
+        item.start.date_time.to_time.iso8601, # scheduled_start_time
+        item.end.date_time.to_time.iso8601, # scheduled_end_time
+        item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし', # description
+        3, # entity_type(1 => :stage, 2 => :voice, 3 => :external)
+        1, # status(1 => :scheduled, 2 => :active, 3 => :completed, 4 => :canceled)
+        nil # image
+      )
+    rescue StandardError => e
+      next # 重複するイベントは登録しない
+    end
   end
 end
 
 scheduler.cron '0 18 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
+  ch = s.text_channels.find { |c| c.name == 'イベント情報' }
   authorizer.fetch_access_token!
 
   service = Google::Apis::CalendarV3::CalendarService.new
