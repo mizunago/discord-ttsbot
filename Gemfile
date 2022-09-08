@@ -12,6 +12,7 @@ gem 'google-api-client'
 gem 'googleauth'
 gem 'rufus-scheduler'
 gem 'sanitize'
+gem 'simple_twitter'
 gem 'sqlite3'
 gem 'twitch-api', git: 'https://github.com/mauricew/ruby-twitch-api'
 

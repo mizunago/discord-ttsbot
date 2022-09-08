@@ -10,6 +10,7 @@ require 'discordrb'
 require 'aws-sdk-polly'
 require 'active_support'
 require 'active_support/core_ext'
+require 'simple_twitter'
 require 'sqlite3'
 require 'pp'
 require 'yaml'
@@ -130,6 +131,11 @@ def db_connect_and_create
 
     create table last_twitch_crawler_times (
       id integer primary key
+    );
+
+    create table last_twitter_crawler_times (
+      name text primary key,
+      id integer not null default '0'
     );
   SQL
 
@@ -770,7 +776,95 @@ s = bot.servers[406_456_641_593_016_320]
 
 scheduler = Rufus::Scheduler.new
 
-scheduler.cron '*/3 * * * *' do
+scheduler.cron '*/10 * * * *' do
+  next unless COMMAND_PREFIX.include?('jack')
+
+  config = YAML.load(File.open('twitter_secret.yml')).with_indifferent_access
+  client = SimpleTwitter::Client.new(
+    api_key: config[:api_key],
+    api_secret_key: config[:api_secret_key],
+    access_token: config[:access_token],
+    access_token_secret: config[:access_token_secret]
+  )
+
+  select_sql = 'SELECT id, name FROM last_twitter_crawler_times WHERE name = ? ORDER BY id DESC LIMIT 1'
+  twitter_discord_map = [
+    {
+      name: 'DisneyDLV',
+      server_name: 'ディズニードリームライトバレー',
+      ch_name: '公式ニュース'
+    },
+    {
+      name: 'SoT_Support',
+      server_name: 'Sea of Thieves JPN',
+      ch_name: '公式-twitter'
+    },
+    {
+      name: 'SeaOfThieves',
+      server_name: 'Sea of Thieves JPN',
+      ch_name: '公式-twitter'
+    }
+  ]
+  twitter_discord_map.each do |account|
+    user_name = account[:name]
+    results = db.execute(select_sql, user_name)
+    last_id = 0
+    results.each do |row|
+      last_id = row[0].to_i
+    end
+    base_time = Time.now
+
+    server_id, server = bot.servers.find { |_id, server| server.name == account[:server_name] }
+    ch = server.text_channels.find { |c| c.name.include?(account[:ch_name]) }
+
+    user = client.get("https://api.twitter.com/2/users/by?usernames=#{user_name}&user.fields=created_at,profile_image_url&expansions=pinned_tweet_id&tweet.fields=author_id,created_at")
+    twtter_id = user[:data][0][:id]
+    request_url = "https://api.twitter.com/2/users/#{twtter_id}/tweets?exclude=replies&expansions=attachments.poll_ids,attachments.media_keys&media.fields=url"
+    request_url += "&since_id=#{last_id}" if last_id.positive?
+    tweets = client.get(request_url)
+
+    tweets[:data]&.reverse&.each do |tweet|
+      url = "https://twitter.com/#{user_name}/status/#{tweet[:id]}"
+      if tweet[:attachments]
+        media_keys = tweet[:attachments][:media_keys]
+        medias = tweets[:includes][:media].select do |media|
+          media_keys.include?(media[:media_key])
+        end
+        medias.map! do |media|
+          "#{media[:url]}:large\n"
+        end
+      else
+        medias = nil
+      end
+      ch.send_embed do |embed|
+        embed.title = "@#{user_name} #{url}"
+        embed.url = url
+        embed.description = "訳文：
+
+#{deepl.trans(tweet[:text])}
+
+原文：
+
+#{tweet[:text]}"
+        embed.color = '#0000EE'
+        embed.footer = { text: tweet[:created_at], icon_url: user[:data][0][:profile_image_url] }
+        embed.image =  Discordrb::Webhooks::EmbedImage.new(url: medias[0]) if medias
+      end
+      # 残りの画像は普通に送る
+      ch.send_message(medias[1..].join("\n")) if medias & [1..] && !medias & [1..].empty?
+
+      # ch.send_message("#{Time.now.iso8601} ツイート: #{url}")
+    end
+    next unless tweets[:meta][:result_count].positive?
+
+    last_id = tweets[:meta][:newest_id]
+    db.execute('DELETE FROM last_twitter_crawler_times WHERE name = ?', user_name)
+    insert_sql = 'INSERT INTO last_twitter_crawler_times (name, id) VALUES(?, ?)'
+    db.execute(insert_sql, user_name, last_id)
+  end
+end
+
+scheduler.cron '*/10 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   config = YAML.load(File.open('twitch_secret.yml')).with_indifferent_access
@@ -813,10 +907,11 @@ URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
     type: 'video',
     eventType: 'live',
     regionCode: 'JP',
-    maxResults: '1',
     order: 'date',
-    #q: 'Sea of Thieves',
-    q: 'Dead by Daylight',
+    maxResults: '8',
+    q: 'Sea of Thieves'
+    # maxResults: '4',
+    # q: 'Dead by Daylight',
   }
 
   uri = URI.parse('https://www.googleapis.com/youtube/v3/search')
@@ -847,11 +942,15 @@ URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
       id: stream[:id][:videoId]
     }
 
+    # タイトルと概要欄に日本語が含まれているか？
+    # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
+    regex = /(?:\p{Hiragana}|\p{Katakana})/
+    next unless title =~ regex || description =~ regex
+
+    # 配信開始時刻を調べる
     uri2 = URI.parse('https://www.googleapis.com/youtube/v3/videos')
     uri2.query = URI.encode_www_form(query2)
     req = Net::HTTP::Get.new(uri2.request_uri)
-    # デバッグ
-    puts uri2.request_uri
     res = http.request(req)
     begin
       body = JSON.parse(res.body).with_indifferent_access
@@ -862,11 +961,6 @@ URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
 
     # 前回チェックから現在までに始まった配信でなければ無視する
     next unless (last_checked_time..base_time).cover?(start_at)
-
-    # タイトルと概要欄に日本語が含まれているか？
-    # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
-    regex = /(?:\p{Hiragana}|\p{Katakana})/
-    next unless title =~ regex && description =~ regex
 
     message = "#{channelTitle}さんの配信が始まりました
 配信名： #{title}
@@ -964,12 +1058,12 @@ scheduler.cron '0 18 * * *' do
     m = ch.send_message(message)
   end
 
-  ch.send_message('---- 明日終了のイベント ----') if end_events.size > 0
-
   end_events = response.items.select do |item|
     # 明日終了のイベント
     ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time) && !(base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
   end
+
+  ch.send_message('---- 明日終了のイベント ----') if end_events.size > 0
 
   end_events.each do |item|
     message = "■イベント名: #{item.summary}
