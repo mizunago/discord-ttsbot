@@ -64,6 +64,14 @@ EMOJI_REAPERS_BONES = 'Reapers_Bones'
 EMOJI_BILGE_RAT = 'Bilge_Rat'
 EMOJI_HUNTERS_CALL = 'Hunters_Call'
 EMOJI_HUNTRESS_FLAG = 'Huntress_Flag'
+EMOJI_PC = '🖥️'
+EMOJI_XBOX = 'Xbox'
+EMOJI_XBOX_GAME_PASS = 'XboxGamePass'
+EMOJI_STEAM = 'Steam'
+EMOJI_MICROSOFT_STORE = 'Microsoft_Store'
+EMOJI_CONTROLLER = '🎮'
+EMOJI_KEYBOARD = '⌨'
+EMOJI_SMARTPHONE = '📱'
 
 def group_div(user_num, number_of_member)
   sub_num = 0
@@ -97,6 +105,22 @@ def emoji_name(event)
     'ハンターズ・コール'
   when EMOJI_HUNTRESS_FLAG
     'イベントハンター'
+  when EMOJI_PC
+    'PC'
+  when EMOJI_XBOX
+    'Xbox'
+  when EMOJI_XBOX_GAME_PASS
+    'Xboxゲームパス'
+  when EMOJI_STEAM
+    'Steam'
+  when EMOJI_MICROSOFT_STORE
+    'Microsoft Store'
+  when EMOJI_CONTROLLER
+    'コントローラー'
+  when EMOJI_KEYBOARD
+    'キーボード＆マウス'
+  when EMOJI_SMARTPHONE
+    'タッチ操作'
   end
 end
 
@@ -716,7 +740,8 @@ bot.message(in: '#呪われし者の酒場') do |event|
     end
   end
   if name.nil? or name.empty?
-    notice = event.respond("えーっと、お前さんの名前は・・・？\n名前は #※必読-初めて参加した方へ の通りに付けてるよな？\n俺が適当にお前の名前を付けてやってもいいんだが…")
+    ch = event.server.text_channels.find { |ch| ch.name.include?('必読') }
+    notice = event.respond("えーっと、お前さんの名前は・・・？\n名前は <##{ch.id}>の通りに付けてるよな？\n俺が適当にお前の名前を付けてやってもいいんだが…")
   end
 
   # ローカルに画像を保存
@@ -764,18 +789,11 @@ end
 
 bot.run :async
 # bot.run
-OOB_URI = 'urn:ietf:wg:oauth:2.0:oob'
-scope = 'https://www.googleapis.com/auth/calendar'
-calendar_id = 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com'
-authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
-  json_key_io: File.open('secret.json'),
-  scope: scope
-)
-
 s = bot.servers[406_456_641_593_016_320]
 
 scheduler = Rufus::Scheduler.new
 
+# 公式Twitter を翻訳して流す
 scheduler.cron '*/10 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
@@ -836,22 +854,27 @@ scheduler.cron '*/10 * * * *' do
       else
         medias = nil
       end
-      ch.send_embed do |embed|
-        embed.title = "@#{user_name} #{url}"
-        embed.url = url
-        embed.description = "訳文：
+      begin
+        ch.send_embed do |embed|
+          embed.title = "@#{user_name} #{url}"
+          embed.url = url
+          embed.description = "訳文：
 
-#{deepl.trans(tweet[:text])}
+  #{deepl.trans(tweet[:text])}
 
-原文：
+  原文：
 
-#{tweet[:text]}"
-        embed.color = '#0000EE'
-        embed.footer = { text: tweet[:created_at], icon_url: user[:data][0][:profile_image_url] }
-        embed.image =  Discordrb::Webhooks::EmbedImage.new(url: medias[0]) if medias
+  #{tweet[:text]}"
+          embed.color = '#0000EE'
+          embed.footer = { text: tweet[:created_at], icon_url: user[:data][0][:profile_image_url] }
+          embed.image =  Discordrb::Webhooks::EmbedImage.new(url: medias[0]) if medias
+        end
+        # 残りの画像は普通に送る
+        ch.send_message(medias[1..].join("\n")) if medias & [1..] && !medias & [1..].empty?
+      rescue => e
+        pp server
+        pp ch
       end
-      # 残りの画像は普通に送る
-      ch.send_message(medias[1..].join("\n")) if medias & [1..] && !medias & [1..].empty?
 
       # ch.send_message("#{Time.now.iso8601} ツイート: #{url}")
     end
@@ -864,6 +887,7 @@ scheduler.cron '*/10 * * * *' do
   end
 end
 
+# Youtube, Twitch の配信情報を流す
 scheduler.cron '*/10 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
@@ -975,7 +999,25 @@ URL: #{url}
   db.execute(insert_sql, base_time.to_i)
 end
 
-scheduler.cron '0 */2 * * *' do
+OOB_URI = 'urn:ietf:wg:oauth:2.0:oob'
+scope = 'https://www.googleapis.com/auth/calendar'
+authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
+  json_key_io: File.open('secret.json'),
+  scope: scope
+)
+
+calendar_id_map = [
+  {
+    id: 'ls7g7e2bnqmfdq846r5f59mbjo',
+    server_name: 'Sea of Thieves JPN',
+  },
+  {
+    id: '5spk3hufov8rcorh536do7dnr8@group.calendar.google.com',
+    server_name: 'Skull and Bones Japan',
+  },
+]
+# Google カレンダーをイベントに登録する
+scheduler.cron '*/3 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   authorizer.fetch_access_token!
@@ -985,42 +1027,46 @@ scheduler.cron '0 */2 * * *' do
 
   base_time = DateTime.now
 
-  response = service.list_events(calendar_id,
-                                 max_results: 10,
-                                 single_events: true,
-                                 order_by: 'startTime',
-                                 time_min: base_time.rfc3339)
-  start_events = response.items
-  start_events.each do |item|
-    # 開始済みのイベントはイベント登録しない
-    next if item.start.date_time.to_time < Time.now
+  calendar_id_map.each do |calendar|
+    server_id, server = bot.servers.find { |_id, server| server.name == account[:server_name] }
+    response = service.list_events(calendar[:id],
+                                   max_results: 10,
+                                   single_events: true,
+                                   order_by: 'startTime',
+                                   time_min: base_time.rfc3339)
+    start_events = response.items
+    start_events.each do |item|
+      # 開始済みのイベントはイベント登録しない
+      next if item.start.date_time.to_time < Time.now
 
-    begin
-      insert_sql = 'INSERT INTO registered_events VALUES(?, ?)'
-      sha256 = Digest::SHA256.new
-      sha256.update(item.summary)
-      sha256.update(item.start.date_time.to_time.iso8601)
-      db.execute(insert_sql, sha256.hexdigest, item.summary)
-      Discordrb::API::Server.create_scheduled_event(
-        bot.token,
-        s.id,
-        nil, # channel_id (external のときは nil)
-        { "location": 'ゲーム内' }, # metadata
-        item.summary, # イベント名
-        2, # privacy_level(2 => :guild_only)
-        item.start.date_time.to_time.iso8601, # scheduled_start_time
-        item.end.date_time.to_time.iso8601, # scheduled_end_time
-        item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし', # description
-        3, # entity_type(1 => :stage, 2 => :voice, 3 => :external)
-        1, # status(1 => :scheduled, 2 => :active, 3 => :completed, 4 => :canceled)
-        nil # image
-      )
-    rescue StandardError => e
-      next # 重複するイベントは登録しない
+      begin
+        insert_sql = 'INSERT INTO registered_events VALUES(?, ?)'
+        sha256 = Digest::SHA256.new
+        sha256.update(item.summary)
+        sha256.update(item.start.date_time.to_time.iso8601)
+        db.execute(insert_sql, sha256.hexdigest, item.summary)
+        Discordrb::API::Server.create_scheduled_event(
+          bot.token,
+          server_id,
+          nil, # channel_id (external のときは nil)
+          { "location": 'ゲーム内' }, # metadata
+          item.summary, # イベント名
+          2, # privacy_level(2 => :guild_only)
+          item.start.date_time.to_time.iso8601, # scheduled_start_time
+          item.end.date_time.to_time.iso8601, # scheduled_end_time
+          item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし', # description
+          3, # entity_type(1 => :stage, 2 => :voice, 3 => :external)
+          1, # status(1 => :scheduled, 2 => :active, 3 => :completed, 4 => :canceled)
+          nil # image
+        )
+      rescue StandardError => e
+        next # 重複するイベントは登録しない
+      end
     end
   end
 end
 
+# Discordのチャットにイベント情報を流す
 scheduler.cron '0 18 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
