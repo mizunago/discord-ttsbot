@@ -386,7 +386,7 @@ class CustomBot
                                                                                          parent: cr_ch)
 
     # 順番を自動作成カテゴリの下に配置する
-    role_only = server.categories.find { |ch| ch.name == '自動作成' }
+    role_only = server.categories.find { |ch| ch.name.include?('自動作成') }
     cr_ch.sort_after(role_only)
 
     # 作った人をそのチャンネルに放り込む
@@ -602,7 +602,7 @@ bot.message(in: '#自動ロール付与') do |event|
   message = event.message
   user = message.author
   notice = ''
-  role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  role = event.server.roles.find { |r| r.name.include?('乗船待機中') }
   role ||= event.server.create_role
   role.name = '乗船待機中'
   if message.to_s.include?('解除') or message.to_s.include?('下船')
@@ -621,7 +621,7 @@ bot.reaction_add do |event|
   next unless COMMAND_PREFIX.include?('jack')
 
   # 同鯖のメンバー割り振り機能
-  if event.channel.name == '同鯖メンバー表（主催以外は基本書き込み禁止）' or event.channel.name == '実験室'
+  if event.channel.name.include?('同鯖メンバー表') or event.channel.name.include?('実験室')
     if event.emoji.name == EMOJI_POINT_UP && !event.user.current_bot?
       bot_func.collect_member(event)
       next
@@ -633,8 +633,8 @@ bot.reaction_add do |event|
 
   # なごなごのユーザーID＆絵文字のアテナ＆特定チャンネルでのみ発動
   # 伝説の海賊の手動認定処理
-  if event.user.id == 311_482_797_053_444_106 && event.emoji.id == 577_368_513_375_633_429 && event.channel.name == '呪われし者の酒場'
-    role = event.server.roles.find { |r| r.name == '伝説の海賊' }
+  if event.user.id == 311_482_797_053_444_106 && event.emoji.id == 577_368_513_375_633_429 && event.channel.name.include?('呪われし者の酒場')
+    role = event.server.roles.find { |r| r.name.include?('伝説の海賊') }
     user = event.message.author
     user.add_role(role)
     message = event.message
@@ -644,7 +644,7 @@ bot.reaction_add do |event|
   end
 
   # ロール付与
-  if event.channel.name == '自動ロール付与' or event.channel.name == '実験室'
+  if event.channel.name.include?('自動ロール付与') or event.channel.name.include?('実験室')
     user = event.user
     role = event.server.roles.find { |r| r.name == emoji_name(event) }
     next unless role
@@ -659,7 +659,7 @@ end
 
 bot.reaction_remove do |event|
   # ロール解除
-  if event.channel.name == '自動ロール付与' or event.channel.name == '実験室'
+  if event.channel.name.include?('自動ロール付与') or event.channel.name.include?('実験室')
     user = event.user
     role = event.server.roles.find { |r| r.name == emoji_name(event) }
     next unless role
@@ -675,7 +675,7 @@ end
 bot.message do |event|
   next unless COMMAND_PREFIX.include?('jack')
 
-  role = event.server.roles.find { |r| r.name == '乗船待機中' }
+  role = event.server.roles.find { |r| r.name.include?('乗船待機中') }
   user = event.author
 
   if event.channel.name.include?('船員募集') or event.channel.name.include?('実験室')
@@ -725,7 +725,7 @@ bot.message(in: '#呪われし者の酒場') do |event|
   message = event.message
   user = message.author
   notice = ''
-  role = event.server.roles.find { |r| r.name == '伝説の海賊' }
+  role = event.server.roles.find { |r| r.name.include?('伝説の海賊') }
   unless role
     role = event.server.create_role
     role.name = '伝説の海賊'
@@ -849,7 +849,7 @@ scheduler.cron '*/10 * * * *' do
           media_keys.include?(media[:media_key])
         end
         medias.map! do |media|
-          "#{media[:url]}:large\n"
+          "#{media[:url]}\n"
         end
       else
         medias = nil
@@ -860,30 +860,31 @@ scheduler.cron '*/10 * * * *' do
           embed.url = url
           embed.description = "訳文：
 
-  #{deepl.trans(tweet[:text])}
+#{deepl.trans(tweet[:text])}
 
-  原文：
+原文：
 
-  #{tweet[:text]}"
+#{tweet[:text]}"
           embed.color = '#0000EE'
           embed.footer = { text: tweet[:created_at], icon_url: user[:data][0][:profile_image_url] }
           embed.image =  Discordrb::Webhooks::EmbedImage.new(url: medias[0]) if medias
         end
         # 残りの画像は普通に送る
         ch.send_message(medias[1..].join("\n")) if medias & [1..] && !medias & [1..].empty?
+        next unless tweets[:meta][:result_count].positive?
+
+        last_id = tweets[:meta][:newest_id]
+        db.execute('DELETE FROM last_twitter_crawler_times WHERE name = ?', user_name)
+        insert_sql = 'INSERT INTO last_twitter_crawler_times (name, id) VALUES(?, ?)'
+        db.execute(insert_sql, user_name, last_id)
       rescue => e
         pp server
         pp ch
+        raise
       end
 
       # ch.send_message("#{Time.now.iso8601} ツイート: #{url}")
     end
-    next unless tweets[:meta][:result_count].positive?
-
-    last_id = tweets[:meta][:newest_id]
-    db.execute('DELETE FROM last_twitter_crawler_times WHERE name = ?', user_name)
-    insert_sql = 'INSERT INTO last_twitter_crawler_times (name, id) VALUES(?, ?)'
-    db.execute(insert_sql, user_name, last_id)
   end
 end
 
@@ -898,7 +899,7 @@ scheduler.cron '*/10 * * * *' do
     client_secret: config[:client_secret]
   )
 
-  ch = s.text_channels.find { |c| c.name == '配信情報' }
+  ch = s.text_channels.find { |c| c.name.include?('配信情報') }
 
   # pp client.get_games(name: 'Sea of Thieves').data
   base_time = Time.now
@@ -913,13 +914,17 @@ scheduler.cron '*/10 * * * *' do
   blacklists = ['simonshisha32k']
 
   client.get_streams(game_id: 490_377, language: 'ja').data.each do |stream|
+    user_login = stream.instance_variable_get(:@user_login)
     # 前回チェックから現在までに始まった配信でなければ無視する
     next unless (last_checked_time..base_time).cover?(stream.started_at)
-    next if blacklists.include?(stream.instance_variable_get(:@user_login))
+    next if blacklists.include?(user_login)
+    # 直近で同じ人の配信を書き込んでいたら再度書かない
+    histories = ch.history(2)
+    next unless histories.select {|m| m.text.include?("https://twitch.tv/#{user_login}") }.empty?
 
     message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
 配信名： #{stream.title}
-URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
+URL: https://twitch.tv/#{user_login}
 ※参加型配信でない可能性があります。またガイド禁止などのチャットルールを守り視聴・コメントしてください"
     ch.send_message(message)
   end
@@ -950,7 +955,7 @@ URL: https://twitch.tv/#{stream.instance_variable_get(:@user_login)}
     raise
   end
   # デバッグ
-  puts uri.request_uri
+  puts "https://www.googleapis.com/#{uri.request_uri}"
 
   next if body[:items].nil?
 
@@ -1008,7 +1013,7 @@ authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
 
 calendar_id_map = [
   {
-    id: 'ls7g7e2bnqmfdq846r5f59mbjo',
+    id: 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com',
     server_name: 'Sea of Thieves JPN',
   },
   {
@@ -1017,7 +1022,7 @@ calendar_id_map = [
   },
 ]
 # Google カレンダーをイベントに登録する
-scheduler.cron '*/3 * * * *' do
+scheduler.cron '* */2 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   authorizer.fetch_access_token!
@@ -1028,7 +1033,7 @@ scheduler.cron '*/3 * * * *' do
   base_time = DateTime.now
 
   calendar_id_map.each do |calendar|
-    server_id, server = bot.servers.find { |_id, server| server.name == account[:server_name] }
+    server_id, server = bot.servers.find { |_id, server| server.name == calendar[:server_name] }
     response = service.list_events(calendar[:id],
                                    max_results: 10,
                                    single_events: true,
@@ -1070,14 +1075,14 @@ end
 scheduler.cron '0 18 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
-  ch = s.text_channels.find { |c| c.name == 'イベント情報' }
+  ch = s.text_channels.find { |c| c.name.include?('イベント情報') }
   authorizer.fetch_access_token!
 
   service = Google::Apis::CalendarV3::CalendarService.new
   service.authorization = authorizer
 
   base_time = DateTime.now
-
+  calendar_id = calendar_id_map[0][:id]
   response = service.list_events(calendar_id,
                                  max_results: 10,
                                  single_events: true,
