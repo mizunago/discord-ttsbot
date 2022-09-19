@@ -212,26 +212,19 @@ class CustomBot
     @txt_channel = event.channel
 
     unless channel
-      event << '```'
-      event << 'ボイスチャンネルに接続されていません'
-      event << '```'
+      @txt_channel.send_message('ボイスチャンネルに接続されていません')
       return
     end
 
     # ユーザー数制限のあるチャンネルには接続しない
     unless @voice_channel.user_limit.zero?
-      event << '人数制限のあるチャンネルにはBOTを呼ぶことはできません「人数無制限」の船で呼んでください'
+      @txt_channel.send_message('人数制限のあるチャンネルにはBOTを呼ぶことはできません「人数無制限」の船で呼んでください')
       return
     end
 
     # ボイスチャンネルにbotを接続
     @bot.voice_connect(channel)
-    event << '```'
-    event << "ボイスチャンネル「#{channel.name}」に接続しました。"
-    event << "「#{@cmd_prefix} help」でコマンド一覧を確認できます"
-    event << "「#{@cmd_prefix} chname 名前」で読み上げてもらう名前を変更することができます"
-    event << 'VOICEVOX:四国めたん VOICEVOX:ずんだもん'
-    event << '```'
+    @txt_channel.send_message("ボイスチャンネル「#{channel.name}」に接続しました。")
   end
 
   def destroy(event)
@@ -243,16 +236,12 @@ class CustomBot
     server = event.server.resolve_id
 
     unless channel
-      event << '```'
-      event << 'ボイスチャンネルに接続されていません'
-      event << '```'
+      @txt_channel.send_message('ボイスチャンネルに接続されていません')
       return
     end
 
     @bot.voice_destroy(server)
-    event << '```'
-    event << "ボイスチャンネル「 #{channel.name}」から切断されました"
-    event << '```'
+    @txt_channel.send_message("ボイスチャンネル「 #{channel.name}」から切断されました")
     @voice_channel = nil
     @txt_channel = nil
   end
@@ -332,10 +321,7 @@ class CustomBot
     File.open("#{NAME_DIR}/#{event.server.resolve_id}_#{event.user.resolve_id}", 'w') do |f|
       f.puts(name.to_s)
     end
-
-    event << '```'
-    event << "呼び方を#{name}に変更しました。"
-    event << '```'
+    @txt_channel.send_message("呼び方を#{name}に変更しました。")
   end
 
   def special_word_voice(event, message)
@@ -551,26 +537,53 @@ deepl = Trans.new(DEEPL_AUTH_KEY)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
 
+
+bot.register_application_command(:ping, 'BOT が生きていれば返事をします', ) do |cmd|
+  cmd.string('message', '送信されたメッセージをオウムがえしします')
+end
+
+bot.application_command(:ping) do |event|
+  event.respond(content: "pong: #{event.options['message']}")
+end
+
+bot.register_application_command(:connect, '読み上げbotを接続中の音声チャンネルに参加させます') do |cmd|
+end
+
+bot.application_command(:connect) do |event|
+  bot_func.connect(event)
+end
+
+bot.register_application_command(:disconnect, '音声チャンネルに参加している読み上げbotを切断します') do |cmd|
+end
+
+bot.application_command(:disconnect) do |event|
+  bot_func.destroy(event)
+end
+
+bot.register_application_command(:in_game_time, 'ゲーム内の時間を表示します') do |cmd|
+end
+
+bot.application_command(:in_game_time) do |event|
+  event.channel.send_message("現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です\nゲーム内は「#{SotTime.new(Time.now.utc).print}」です")
+end
+
+bot.register_application_command(:chname, 'botに読み上げられる自分の名前を設定します') do |cmd|
+  cmd.string('name', '読み上げてほしい名前を書きます', required: true)
+end
+
+bot.application_command(:chname) do |event|
+  bot_func.chname(event, event.options['name'] || 'ななしさん')
+end
+
 bot.command(:connect,
             description: '読み上げbotを接続中の音声チャンネルに参加させます',
             usage: "#{COMMAND_PREFIX} connect") do |event|
   bot_func.connect(event)
 end
 
-bot.command(:s,
-            description: '読み上げbotを接続中の音声チャンネルに参加させます',
-            usage: "#{COMMAND_PREFIX} s") do |event|
-  bot_func.connect(event)
-end
-
 bot.command(:destroy,
             description: '音声チャンネルに参加している読み上げbotを切断します',
             usage: "#{COMMAND_PREFIX} destroy") do |event|
-  bot_func.destroy(event)
-end
-bot.command(:bye,
-            description: '音声チャンネルに参加している読み上げbotを切断します',
-            usage: "#{COMMAND_PREFIX} bye") do |event|
   bot_func.destroy(event)
 end
 
@@ -794,7 +807,7 @@ s = bot.servers[406_456_641_593_016_320]
 scheduler = Rufus::Scheduler.new
 
 # 公式Twitter を翻訳して流す
-scheduler.cron '*/10 * * * *' do
+scheduler.cron '2,12,22,32,42,52 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   config = YAML.load(File.open('twitter_secret.yml')).with_indifferent_access
@@ -821,6 +834,11 @@ scheduler.cron '*/10 * * * *' do
       name: 'SeaOfThieves',
       server_name: 'Sea of Thieves JPN',
       ch_name: '公式-twitter'
+    },
+    {
+      name: 'skullnbonesgame',
+      server_name: 'Skull and Bones Japan',
+      ch_name: '公式news'
     }
   ]
   twitter_discord_map.each do |account|
@@ -832,12 +850,12 @@ scheduler.cron '*/10 * * * *' do
     end
     base_time = Time.now
 
-    server_id, server = bot.servers.find { |_id, server| server.name == account[:server_name] }
+    server_id, server = bot.servers.find { |_id, server| server.name.include?(account[:server_name]) }
     ch = server.text_channels.find { |c| c.name.include?(account[:ch_name]) }
 
     user = client.get("https://api.twitter.com/2/users/by?usernames=#{user_name}&user.fields=created_at,profile_image_url&expansions=pinned_tweet_id&tweet.fields=author_id,created_at")
     twtter_id = user[:data][0][:id]
-    request_url = "https://api.twitter.com/2/users/#{twtter_id}/tweets?exclude=replies&expansions=attachments.poll_ids,attachments.media_keys&media.fields=url"
+    request_url = "https://api.twitter.com/2/users/#{twtter_id}/tweets?exclude=replies&expansions=attachments.poll_ids,attachments.media_keys&media.fields=url&tweet.fields=created_at"
     request_url += "&since_id=#{last_id}" if last_id.positive?
     tweets = client.get(request_url)
 
@@ -847,9 +865,6 @@ scheduler.cron '*/10 * * * *' do
         media_keys = tweet[:attachments][:media_keys]
         medias = tweets[:includes][:media].select do |media|
           media_keys.include?(media[:media_key])
-        end
-        medias.map! do |media|
-          "#{media[:url]}\n"
         end
       else
         medias = nil
@@ -866,11 +881,17 @@ scheduler.cron '*/10 * * * *' do
 
 #{tweet[:text]}"
           embed.color = '#0000EE'
-          embed.footer = { text: tweet[:created_at], icon_url: user[:data][0][:profile_image_url] }
-          embed.image =  Discordrb::Webhooks::EmbedImage.new(url: medias[0]) if medias
+          embed.footer = { text: Time.parse(tweet[:created_at]).to_s, icon_url: user[:data][0][:profile_image_url] }
+          embed.image = Discordrb::Webhooks::EmbedImage.new(url: medias[0][:url]) if medias && medias[0][:type] == 'photo'
         end
-        # 残りの画像は普通に送る
-        ch.send_message(medias[1..].join("\n")) if medias & [1..] && !medias & [1..].empty?
+        if medias
+          if medias.find { |m| m[:type] == 'video' }
+            ch.send_message("ツイートに動画が含まれていました: #{url}")
+          else
+            unsent_images = medias[1..]
+            ch.send_message(unsent_images.map{|m| m[:url] }.join("\n")) if unsent_images && !unsent_images.empty?
+          end
+        end
         next unless tweets[:meta][:result_count].positive?
 
         last_id = tweets[:meta][:newest_id]
@@ -889,7 +910,7 @@ scheduler.cron '*/10 * * * *' do
 end
 
 # Youtube, Twitch の配信情報を流す
-scheduler.cron '*/10 * * * *' do
+scheduler.cron '2,12,22,32,42,52 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   config = YAML.load(File.open('twitch_secret.yml')).with_indifferent_access
@@ -918,9 +939,12 @@ scheduler.cron '*/10 * * * *' do
     # 前回チェックから現在までに始まった配信でなければ無視する
     next unless (last_checked_time..base_time).cover?(stream.started_at)
     next if blacklists.include?(user_login)
-    # 直近で同じ人の配信を書き込んでいたら再度書かない
-    histories = ch.history(2)
-    next unless histories.select {|m| m.text.include?("https://twitch.tv/#{user_login}") }.empty?
+    histories = ch.history(10)
+    recent_streams = histories.select do |m|
+      # 直近で同じ人の配信を書き込んでいたら再度書かない
+      m.text.include?("https://twitch.tv/#{user_login}") && m.timestamp + 3.hours > base_time
+    end
+    next unless recent_streams.empty?
 
     message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
 配信名： #{stream.title}
