@@ -2,7 +2,6 @@
 
 require 'net/http'
 require 'uri'
-require 'pp'
 require 'json'
 
 class Trans

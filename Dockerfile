@@ -8,8 +8,7 @@ RUN apt-get update && apt-get install -y \
     libsodium-dev \
     software-properties-common \
     imagemagick
-RUN apt-get update && apt-get install -y tesseract-ocr libtesseract-dev tesseract-ocr-jpn  tesseract-ocr-script-jpan \
-    && apt-get clean \
+RUN apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,6 +19,7 @@ COPY discord_voicebot.rb /app/
 COPY voicevox.rb /app/
 COPY deepl_trans.rb /app/
 COPY secret.json /app/
+COPY vision.json /app/
 COPY twitch_secret.yml /app/
 COPY youtube_secret.yml /app/
 COPY twitter_secret.yml /app/

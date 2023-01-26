@@ -2,7 +2,6 @@
 
 require 'net/http'
 require 'uri'
-require 'pp'
 
 VOICEVOX_HOST = 'voicevox'
 VOICEVOX_PORT = 50_021

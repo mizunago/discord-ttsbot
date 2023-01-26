@@ -6,6 +6,7 @@ require 'digest'
 require 'googleauth'
 require 'googleauth/stores/file_token_store'
 require 'google/apis/calendar_v3'
+require 'google/cloud/vision'
 require 'discordrb'
 require 'aws-sdk-polly'
 require 'active_support'
@@ -20,6 +21,7 @@ require 'rufus-scheduler'
 require 'twitch-api'
 require 'net/http'
 require 'uri'
+require 'logger'
 require_relative 'voicevox'
 require_relative 'deepl_trans'
 
@@ -38,6 +40,7 @@ USE_TRANSLATOR = !ENV['DEEPL_AUTH_KEY'].nil?
 DEEPL_AUTH_KEY = ENV['DEEPL_AUTH_KEY']
 SRC_TRANS_CHANNELS = ENV['SRC_TRANS_CHANNELS'].split(',')
 # DST_TRANS_CHANNELS = ENV['DST_TRANS_CHANNELS'].split(',')
+ENV['VISION_CREDENTIALS'] = 'vision.json'
 
 SAMPLE_RATE = '16000'
 MP3_DIR      = '/data/mp3'
@@ -72,6 +75,8 @@ EMOJI_MICROSOFT_STORE = 'Microsoft_Store'
 EMOJI_CONTROLLER = '🎮'
 EMOJI_KEYBOARD = '⌨'
 EMOJI_SMARTPHONE = '📱'
+EMOJI_MICMUTE = '🔇'
+EMOJI_BIGINNER = '🔰'
 
 def group_div(user_num, number_of_member)
   sub_num = 0
@@ -121,6 +126,10 @@ def emoji_name(event)
     'キーボード＆マウス'
   when EMOJI_SMARTPHONE
     'タッチ操作'
+  when EMOJI_MICMUTE
+    'マイクミュート'
+  when EMOJI_BIGINNER
+    '初心者'
   end
 end
 
@@ -370,6 +379,8 @@ class CustomBot
     cr_ch = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :category)
     voice = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :voice, user_limit: size,
                                                                                          parent: cr_ch)
+    #親カテゴリの権限とおなじものをセット
+    cr_ch.permission_overwrites = channel.category.permission_overwrites
 
     # 順番を自動作成カテゴリの下に配置する
     role_only = server.categories.find { |ch| ch.name.include?('自動作成') }
@@ -528,6 +539,9 @@ class CustomBot
   end
 end
 
+file = File.open('error.log', File::WRONLY | File::APPEND | File::CREAT)
+logger = Logger.new(file, 'daily', datetime_format: '%Y-%m-%d %H:%M:%S')
+
 # DB 接続はシングルトン
 db = db_connect_and_create
 
@@ -537,8 +551,7 @@ deepl = Trans.new(DEEPL_AUTH_KEY)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
 
-
-bot.register_application_command(:ping, 'BOT が生きていれば返事をします', ) do |cmd|
+bot.register_application_command(:ping, 'BOT が生きていれば返事をします') do |cmd|
   cmd.string('message', '送信されたメッセージをオウムがえしします')
 end
 
@@ -564,7 +577,7 @@ bot.register_application_command(:in_game_time, 'ゲーム内の時間を表示�
 end
 
 bot.application_command(:in_game_time) do |event|
-  event.channel.send_message("現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です\nゲーム内は「#{SotTime.new(Time.now.utc).print}」です")
+  event.respond("現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です\nゲーム内は「#{SotTime.new(Time.now.utc).print}」です")
 end
 
 bot.register_application_command(:chname, 'botに読み上げられる自分の名前を設定します') do |cmd|
@@ -668,6 +681,19 @@ bot.reaction_add do |event|
       nil
     end
   end
+
+  # ロール付与（ルール同意）
+  if event.channel.name.include?('必読')
+    user = event.user
+    role = event.server.roles.find { |r| r.name.include?('サーバールール同意済み') }
+    next unless role
+
+    begin
+      user.add_role(role)
+    rescue StandardError
+      nil
+    end
+  end
 end
 
 bot.reaction_remove do |event|
@@ -675,6 +701,18 @@ bot.reaction_remove do |event|
   if event.channel.name.include?('自動ロール付与') or event.channel.name.include?('実験室')
     user = event.user
     role = event.server.roles.find { |r| r.name == emoji_name(event) }
+    next unless role
+
+    begin
+      user.remove_role(role)
+    rescue StandardError
+      nil
+    end
+  end
+  # ロール付与（ルール同意）
+  if event.channel.name.include?('必読')
+    user = event.user
+    role = event.server.roles.find { |r| r.name.include?('サーバールール同意済み') }
     next unless role
 
     begin
@@ -705,7 +743,7 @@ bot.message do |event|
   end
 end
 
-bot.message(in: '#呪われし者の酒場') do |event|
+bot.message(in: '#🍺呪われし者の酒場') do |event|
   next unless COMMAND_PREFIX.include?('jack')
 
   message = event.message
@@ -765,18 +803,16 @@ bot.message(in: '#呪われし者の酒場') do |event|
     end
   end
   # 画像から文字を抽出
-  result = system("convert -threshold 40000 #{filename} #{filename}")
-  result = system("tesseract #{filename} out -l jpn")
-  unless result
-    notice = event.respond('すまねえがイカスミ野郎のせいで文字が読めないんだ。管理人を呼んでくれ')
-    next
-  end
+  image_annotator = Google::Cloud::Vision.image_annotator
+  response = image_annotator.text_detection(
+    image: filename,
+    max_results: 1
+  )
+
   caption_text = ''
-  open('out.txt', 'rb') do |fd|
-    caption_text = fd.read.force_encoding('utf-8').encode!
+  response.responses.each do |res|
+    caption_text = res.text_annotations[0]['description']
   end
-  puts caption_text
-  puts name
 
   flag1 = caption_text.include?(name) unless name.nil?
   flag1 ||= caption_text.include?(user.username)
@@ -864,7 +900,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
       if tweet[:attachments]
         media_keys = tweet[:attachments][:media_keys]
         medias = tweets[:includes][:media].select do |media|
-          media_keys.include?(media[:media_key])
+          media_keys&.include?(media[:media_key])
         end
       else
         medias = nil
@@ -881,15 +917,17 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
 
 #{tweet[:text]}"
           embed.color = '#0000EE'
-          embed.footer = { text: Time.parse(tweet[:created_at]).to_s, icon_url: user[:data][0][:profile_image_url] }
-          embed.image = Discordrb::Webhooks::EmbedImage.new(url: medias[0][:url]) if medias && medias[0][:type] == 'photo'
+          embed.footer = { text: Time.parse(tweet[:created_at]).localtime.to_s, icon_url: user[:data][0][:profile_image_url] }
+          if medias && medias.dig(0, :type) == 'photo'
+            embed.image = Discordrb::Webhooks::EmbedImage.new(url: medias[0][:url])
+          end
         end
         if medias
           if medias.find { |m| m[:type] == 'video' }
             ch.send_message("ツイートに動画が含まれていました: #{url}")
           else
             unsent_images = medias[1..]
-            ch.send_message(unsent_images.map{|m| m[:url] }.join("\n")) if unsent_images && !unsent_images.empty?
+            ch.send_message(unsent_images.map { |m| m[:url] }.join("\n")) if unsent_images && !unsent_images.empty?
           end
         end
         next unless tweets[:meta][:result_count].positive?
@@ -898,7 +936,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
         db.execute('DELETE FROM last_twitter_crawler_times WHERE name = ?', user_name)
         insert_sql = 'INSERT INTO last_twitter_crawler_times (name, id) VALUES(?, ?)'
         db.execute(insert_sql, user_name, last_id)
-      rescue => e
+      rescue StandardError => e
         pp server
         pp ch
         raise
@@ -932,25 +970,38 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
     last_checked_time = Time.at(row[0].to_i)
   end
 
-  blacklists = ['simonshisha32k']
+  blacklists = ['simonshisha32k', 'army_smiley']
+  failed = false
 
-  client.get_streams(game_id: 490_377, language: 'ja').data.each do |stream|
-    user_login = stream.instance_variable_get(:@user_login)
-    # 前回チェックから現在までに始まった配信でなければ無視する
-    next unless (last_checked_time..base_time).cover?(stream.started_at)
-    next if blacklists.include?(user_login)
-    histories = ch.history(10)
-    recent_streams = histories.select do |m|
-      # 直近で同じ人の配信を書き込んでいたら再度書かない
-      m.text.include?("https://twitch.tv/#{user_login}") && m.timestamp + 3.hours > base_time
+  begin
+    client.get_streams(game_id: 490_377, language: 'ja').data.each do |stream|
+      user_login = stream.instance_variable_get(:@user_login)
+      # 前回チェックから現在までに始まった配信でなければ無視する
+      next unless (last_checked_time..base_time).cover?(stream.started_at)
+      next if blacklists.include?(user_login)
+
+      histories = ch.history(10)
+      recent_streams = histories&.select do |m|
+        # 直近で同じ人の配信を書き込んでいたら再度書かない
+        m.text.include?("https://twitch.tv/#{user_login}") && m.timestamp + 8.hours > base_time
+      end
+      next unless recent_streams.empty?
+
+      message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
+  配信名： #{stream.title}
+  URL: https://twitch.tv/#{user_login}
+
+※コメント等で過剰なコーチングをしないでください（配信主が求めた以上の情報を書き込まないでください）
+ガイド禁止・ネタバレ禁止などの配信主のチャットルールを守り、視聴・コメントしてください
+改善されない場合は、こちらの配信情報の通知を停止します
+参加型配信でない可能性があります。
+"
+      ch.send_message(message)
     end
-    next unless recent_streams.empty?
-
-    message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
-配信名： #{stream.title}
-URL: https://twitch.tv/#{user_login}
-※参加型配信でない可能性があります。またガイド禁止などのチャットルールを守り視聴・コメントしてください"
-    ch.send_message(message)
+  rescue => e
+    failed = true
+    puts e.backtrace
+    logger.fatal(e.backtrace)
   end
 
   config = YAML.load(File.open('youtube_secret.yml')).with_indifferent_access
@@ -967,65 +1018,86 @@ URL: https://twitch.tv/#{user_login}
     # q: 'Dead by Daylight',
   }
 
-  uri = URI.parse('https://www.googleapis.com/youtube/v3/search')
-  uri.query = URI.encode_www_form(query)
-  http = Net::HTTP.new(uri.host, uri.port)
-  http.use_ssl = true
-  req = Net::HTTP::Get.new(uri.request_uri)
-  res = http.request(req)
-  body = begin
-    JSON.parse(res.body).with_indifferent_access
-  rescue StandardError => e
-    raise
-  end
-  # デバッグ
-  puts "https://www.googleapis.com/#{uri.request_uri}"
-
-  next if body[:items].nil?
-
-  body[:items].each do |stream|
-    url = "https://www.youtube.com/watch?v=#{stream[:id][:videoId]}"
-    snippet = stream[:snippet]
-    title = snippet[:title]
-    description = snippet[:description]
-    channelTitle = snippet[:channelTitle]
-    query2 = {
-      key: config[:key],
-      part: 'liveStreamingDetails',
-      id: stream[:id][:videoId]
-    }
-
-    # タイトルと概要欄に日本語が含まれているか？
-    # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
-    regex = /(?:\p{Hiragana}|\p{Katakana})/
-    next unless title =~ regex || description =~ regex
-
-    # 配信開始時刻を調べる
-    uri2 = URI.parse('https://www.googleapis.com/youtube/v3/videos')
-    uri2.query = URI.encode_www_form(query2)
-    req = Net::HTTP::Get.new(uri2.request_uri)
+  begin
+    uri = URI.parse('https://www.googleapis.com/youtube/v3/search')
+    uri.query = URI.encode_www_form(query)
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    req = Net::HTTP::Get.new(uri.request_uri)
     res = http.request(req)
-    begin
-      body = JSON.parse(res.body).with_indifferent_access
-      start_at = Time.parse(body[:items][0][:liveStreamingDetails][:actualStartTime])
+    body = begin
+      JSON.parse(res.body).with_indifferent_access
     rescue StandardError => e
       raise
     end
+    # デバッグ
+    puts "https://www.googleapis.com/#{uri.request_uri}"
 
-    # 前回チェックから現在までに始まった配信でなければ無視する
-    next unless (last_checked_time..base_time).cover?(start_at)
+    next if body[:items].nil?
 
-    message = "#{channelTitle}さんの配信が始まりました
-配信名： #{title}
-URL: #{url}
-※参加型配信でない可能性があります。またガイド禁止などのチャットルールを守り視聴・コメントしてください"
-    ch.send_message(message)
+    body[:items].each do |stream|
+      url = "https://www.youtube.com/watch?v=#{stream[:id][:videoId]}"
+      snippet = stream[:snippet]
+      title = snippet[:title]
+      description = snippet[:description]
+      channelTitle = snippet[:channelTitle]
+      query2 = {
+        key: config[:key],
+        part: 'liveStreamingDetails',
+        id: stream[:id][:videoId]
+      }
+
+      # タイトルと概要欄に日本語が含まれているか？
+      # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
+      regex = /(?:\p{Hiragana}+|\p{Katakana}+)/
+      title_matched = title.match(regex)
+      description_matched = description.match(regex)
+      # 日本語を含まない配信は除外
+      next unless title_matched || description_matched
+      # 日本語が３文字以上なければ除外
+      next unless title_matched.to_s.length >= 3 || description_matched.to_s.length >= 3
+
+      # 配信開始時刻を調べる
+      uri2 = URI.parse('https://www.googleapis.com/youtube/v3/videos')
+      uri2.query = URI.encode_www_form(query2)
+      req = Net::HTTP::Get.new(uri2.request_uri)
+      res = http.request(req)
+      begin
+        body = JSON.parse(res.body).with_indifferent_access
+        start_at = Time.parse(body[:items][0][:liveStreamingDetails][:actualStartTime])
+      rescue StandardError => e
+        raise
+      end
+
+      # 前回チェックから現在までに始まった配信でなければ無視する
+      next unless (last_checked_time..base_time).cover?(start_at)
+
+      # 簡易ブラックリスト
+      next if channelTitle.include?('INNIN MAKERS')
+
+      message = "#{channelTitle}さんの配信が始まりました
+  配信名： #{title}
+  URL: #{url}
+
+※コメント等で過剰なコーチングをしないでください（配信主が求めた以上の情報を書き込まないでください）
+ガイド禁止・ネタバレ禁止などの配信主のチャットルールを守り、視聴・コメントしてください
+改善されない場合は、こちらの配信情報の通知を停止します
+※参加型配信でない可能性があります。
+  "
+      ch.send_message(message)
+    end
+  rescue => e
+    failed = true
+    puts e.backtrace
+    logger.fatal(e.backtrace)
   end
 
-  # 最後に実行時間を記録して終了する
-  db.execute('DELETE FROM last_twitch_crawler_times')
-  insert_sql = 'INSERT INTO last_twitch_crawler_times VALUES(?)'
-  db.execute(insert_sql, base_time.to_i)
+  unless failed
+    # 最後に実行時間を記録して終了する
+    db.execute('DELETE FROM last_twitch_crawler_times')
+    insert_sql = 'INSERT INTO last_twitch_crawler_times VALUES(?)'
+    db.execute(insert_sql, base_time.to_i)
+  end
 end
 
 OOB_URI = 'urn:ietf:wg:oauth:2.0:oob'
@@ -1038,13 +1110,14 @@ authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
 calendar_id_map = [
   {
     id: 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com',
-    server_name: 'Sea of Thieves JPN',
+    server_name: 'Sea of Thieves JPN'
   },
   {
     id: '5spk3hufov8rcorh536do7dnr8@group.calendar.google.com',
-    server_name: 'Skull and Bones Japan',
-  },
+    server_name: 'Skull and Bones Japan'
+  }
 ]
+
 # Google カレンダーをイベントに登録する
 scheduler.cron '* */2 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
