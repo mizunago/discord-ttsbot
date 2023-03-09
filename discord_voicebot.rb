@@ -13,7 +13,6 @@ require 'active_support'
 require 'active_support/core_ext'
 require 'simple_twitter'
 require 'sqlite3'
-require 'pp'
 require 'yaml'
 require 'tempfile'
 require 'open-uri'
@@ -380,7 +379,7 @@ class CustomBot
     cr_ch = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :category)
     voice = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :voice, user_limit: size,
                                                                                          parent: cr_ch)
-    #親カテゴリの権限とおなじものをセット
+    # 親カテゴリの権限とおなじものをセット
     cr_ch.permission_overwrites = channel.category.permission_overwrites
 
     # 順番を自動作成カテゴリの下に配置する
@@ -617,6 +616,44 @@ end
 
 bot.message do |event|
   bot_func.speak(event, POLLY_VOICE_ID, VOICEVOX_VOICE_ID)
+  if event.server.name.include?('Sea of Thieves JPN')
+    # ニックネームルールをチェック
+    next unless COMMAND_PREFIX.include?('jack')
+
+    user = event.user
+    username = user.username
+    username = user.nick if user.nick
+    message = "
+<@!#{user.id}> へ
+Sea of Thieves JPN Discord サーバーの管理を任されているBOT, ジャック・スパロウだ。
+お願いがあるからよく読んでくれ
+なお、このメッセージに返信してもらっても答えられないから注意してくれ
+
+サーバー内のニックネームついて、変更をお願いします。
+詳しくは、<#916527229628993606> の読み直しをお願いします
+
+①：サーバー内で発言をされる方は
+```
+例：なごなご（nagonago56611）
+```のようにサーバー内ニックネームの変更をお願いします。
+
+②：サーバー内にて一切発言しない方
+閲覧のみ・お知らせ通知を受け取るだけの為に参加されている方は変更は不要です
+"
+    regex = /(?:\p{Hiragana}|\p{Katakana}|[ー－])+([(（])(\w|\s)+([)）])/
+    next if username.include?('Vortex')
+    next if event.channel.parent.name.include?('自動受信')
+
+    unless username.match(regex)
+      begin
+        event.user.pm.send(message)
+        event.message.delete
+      rescue StandardError
+        event.respond(message)
+        event.message.delete
+      end
+    end
+  end
 end
 
 bot.message(in: SRC_TRANS_CHANNELS) do |event|
@@ -918,7 +955,8 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
 
 #{tweet[:text]}"
           embed.color = '#0000EE'
-          embed.footer = { text: Time.parse(tweet[:created_at]).localtime.to_s, icon_url: user[:data][0][:profile_image_url] }
+          embed.footer = { text: Time.parse(tweet[:created_at]).localtime.to_s,
+                           icon_url: user[:data][0][:profile_image_url] }
           if medias && medias.dig(0, :type) == 'photo'
             embed.image = Discordrb::Webhooks::EmbedImage.new(url: medias[0][:url])
           end
@@ -971,7 +1009,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
     last_checked_time = Time.at(row[0].to_i)
   end
 
-  blacklists = ['simonshisha32k', 'army_smiley']
+  blacklists = %w[simonshisha32k army_smiley]
   failed = false
 
   begin
@@ -999,7 +1037,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
 "
       ch.send_message(message)
     end
-  rescue => e
+  rescue StandardError => e
     failed = true
     puts e.backtrace
     logger.fatal(e.backtrace)
@@ -1070,6 +1108,12 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
         raise
       end
 
+      recent_streams = histories&.select do |m|
+        # 直近で同じ人の配信を書き込んでいたら再度書かない
+        m.text.include?("https://www.youtube.com/watch?v=#{stream[:id][:videoId]}") && m.timestamp + 6.hours > base_time
+      end
+      next unless recent_streams.empty?
+
       # 前回チェックから現在までに始まった配信でなければ無視する
       next unless (last_checked_time..base_time).cover?(start_at)
 
@@ -1087,7 +1131,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
   "
       ch.send_message(message)
     end
-  rescue => e
+  rescue StandardError => e
     failed = true
     puts e.backtrace
     logger.fatal(e.backtrace)
