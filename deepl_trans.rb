@@ -15,7 +15,6 @@ class Trans
     raise 'Cannot trans. over 5000 characters' if msg.length >= 5000 && free
 
     params = { text: msg, target_lang: tgt_lng }
-    uri = nil
     uri = if @paid
             URI.parse("https://api.deepl.com/v2/translate")
           else
@@ -48,9 +47,4 @@ class Trans
       raise
     end
   end
-end
-
-if __FILE__ == $PROGRAM_NAME
-  t = Trans.new('DEEPL AUTH KEY HERE')
-  puts t.trans('very rare and exclusive hat')
 end
