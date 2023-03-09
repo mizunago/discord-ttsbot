@@ -38,6 +38,7 @@ COMMAND_PREFIX = ENV['COMMAND_PREFIX']
 VOICEVOX_VOICE_ID = ENV['VOICEVOX_VOICE_ID']
 USE_TRANSLATOR = !ENV['DEEPL_AUTH_KEY'].nil?
 DEEPL_AUTH_KEY = ENV['DEEPL_AUTH_KEY']
+DEEPL_PAID = !ENV['DEEPL_PAID'].nil?
 SRC_TRANS_CHANNELS = ENV['SRC_TRANS_CHANNELS'].split(',')
 # DST_TRANS_CHANNELS = ENV['DST_TRANS_CHANNELS'].split(',')
 ENV['VISION_CREDENTIALS'] = 'vision.json'
@@ -547,7 +548,7 @@ db = db_connect_and_create
 
 bot = Discordrb::Commands::CommandBot.new(token: DISCORD_BOT_TOKEN, prefix: "#{COMMAND_PREFIX} ")
 bot_func = CustomBot.new(bot, db, { prefix: COMMAND_PREFIX })
-deepl = Trans.new(DEEPL_AUTH_KEY)
+deepl = Trans.new(DEEPL_AUTH_KEY, DEEPL_PAID)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
 
