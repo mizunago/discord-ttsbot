@@ -28,6 +28,6 @@ DEEPL_AUTH_KEY = environment[:DEEPL_AUTH_KEY]
 DEEPL_PAID = !environment[:DEEPL_PAID].nil?
 puts "PAID STATUS: #{DEEPL_PAID}"
 
-deepl = Trans.new(DEEPL_AUTH_KEY, DEEPL_PAID)
+deepl = DeeplTranslator.new(DEEPL_AUTH_KEY, paid: DEEPL_PRO)
 message = 'this is test. ignore me.'
 puts deepl.trans(message)
