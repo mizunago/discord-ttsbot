@@ -206,6 +206,67 @@ class SotTime
   end
 end
 
+class BPTime
+
+  def initialize(init_time = nil, diff = 5.minutes)
+    @diff = diff
+    @init_time = init_time
+  end
+
+  def time
+    @init_time ? (@init_time + @diff).to_i : (Time.new.utc + @diff).to_i
+  end
+
+  def min
+    time / 60 % 60
+  end
+
+  def min_num
+    time / 60 / 25
+  end
+
+  def sec
+    time % 60
+  end
+
+  def night?
+    min_num % 2 == 0
+  end
+
+  def noon?
+    min_num % 2 == 1
+  end
+
+  def hour
+    time / 60 % 25
+  end
+
+  def time_left
+    26 - hour
+  end
+
+  def to_daytime
+    noon? ? '昼' : '夜'
+  end
+
+  def now
+    if noon?
+      (7 + (hour / 25.0) * 12).floor
+    else
+      t_hour = (18 + (hour / 25.0) * 12).floor
+      t_hour -= 24 if t_hour >= 24
+      t_hour
+    end
+  end
+
+  def print
+    """現在は「#{to_daytime}」です
+ゲーム内時刻は大体 #{now}時くらい
+残り#{time_left}分で昼夜が変わるよ
+    """
+  end
+end
+
 class CustomBot
   def initialize(bot, db, **kwargs)
     @bot = bot
@@ -216,6 +277,9 @@ class CustomBot
   end
 
   def connect(event)
+    # ボイスチャット接続不具合で停止されると困るので動作させない
+    return
+
     channel = event.user.voice_channel
     @voice_channel = channel
     @txt_channel = event.channel
@@ -237,6 +301,9 @@ class CustomBot
   end
 
   def destroy(event)
+    # ボイスチャット接続不具合で停止されると困るので動作させない
+    return
+
     begin
       channel = event.user.voice_channel
     rescue StandardError
@@ -263,6 +330,9 @@ class CustomBot
   end
 
   def speak(event, actor, voicevox_actor)
+    # ボイスチャット接続不具合で停止されると困るので動作させない
+    return
+
     return if @txt_channel.nil?
 
     channel   = event.channel
@@ -379,8 +449,11 @@ class CustomBot
     cr_ch = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :category)
     voice = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :voice, user_limit: size,
                                                                                          parent: cr_ch)
-    # 親カテゴリの権限とおなじものをセット
+    # カテゴリに親カテゴリの権限とおなじものをセット
     cr_ch.permission_overwrites = channel.category.permission_overwrites
+
+    # チャンネルに親カテゴリの権限と同じものをセット
+    voice.permission_overwrites = channel.category.permission_overwrites
 
     # 順番を自動作成カテゴリの下に配置する
     role_only = server.categories.find { |ch| ch.name.include?('自動作成') }
@@ -603,8 +676,14 @@ end
 bot.command(:in_game_time,
             description: 'ゲーム内の時間を表示します',
             usage: "#{COMMAND_PREFIX} in_game_time") do |event|
-  event << "現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です"
-  event << "ゲーム内は「#{SotTime.new(Time.now.utc).print}」です"
+  if event.server.name.include?('Sea of Thieves JPN')
+    event << "現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です"
+    event << "ゲーム内は「#{SotTime.new(Time.now.utc).print}」です"
+  end
+  if event.server.name.include?('ブルプロ')
+    event << "現在時刻は「#{Time.now.in_time_zone('Asia/Tokyo')}」です"
+    event << "#{BPTime.new(Time.now).print}"
+  end
 end
 
 bot.command(:chname,
@@ -637,23 +716,29 @@ Sea of Thieves JPN Discord サーバーの管理を任されているBOT, ジャ
 例：なごなご（nagonago56611）
 ```のようにサーバー内ニックネームの変更をお願いします。
 
-※名前とプレイヤー名の間に半角スペースが入っていたり、名前に漢字が混入しているケースが多数あります
+※【なまえ】部分には【ひらがな】、【カタカナ】のみが使用できます。**【アルファベット】や【漢字】は使えません**
+※名前とプレイヤー名の間に半角スペースが入っているケースが多数あります
 
 ②：サーバー内にて一切発言しない方
 閲覧のみ・お知らせ通知を受け取るだけの為に参加されている方は変更は不要です
+荒れるため、ニックネームを変更していない方の発言は自動で削除しています
 
 正しい名前にもかかわらず、書き込めない場合は、 <@!#{311_482_797_053_444_106}>まで、直接ご連絡ください（すぐに反応できないことがあります）
 "
     regex = /(?:\p{Hiragana}|\p{Katakana}|[ー－])+([(（])(\w|\s)+([)）])/
     next if username.include?('Vortex')
     next if event.channel.parent.name.include?('自動受信')
+    # 削除するメッセージを発言ログに残す
+    ch = event.server.text_channels.find { |ch| ch.name.include?('発言ログ') }
 
     unless username.match(regex)
       begin
+        ch.send_message("#{event.channel.name}: #{username} さん（<@!#{user.id}>）の発言、\n> #{event.message}")
         event.user.pm.send(message)
         event.message.delete
       rescue StandardError
-        event.respond(message)
+        event.channel.send(message)
+        # event.respond(message)
         event.message.delete
       end
     end
@@ -706,7 +791,7 @@ bot.reaction_add do |event|
     user = event.message.author
     user.add_role(role)
     message = event.message
-    message.respond("すまねえな！確認に時間がかかっちまった。#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
+    message.respond("すまねえな！確認に時間がかかっちまった。#{user.nick || user.username} (<@!#{user.id}>)が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
     message.create_reaction('🍺') # ビール
     message.create_reaction('🎉') # クラッカー
   end
@@ -863,7 +948,7 @@ bot.message(in: '#🍺呪われし者の酒場') do |event|
 
   if flag1 && flag2
     user.add_role(role)
-    notice = event.respond("#{user.nick || user.username}が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
+    notice = event.respond("#{user.nick || user.username} (<@!#{user.id}>)が「伝説の海賊」の仲間入りだってよ！盛大に飲んで祝ってやろうぜ！")
     message.create_reaction(EMOJI_BEER) # ビール
     message.create_reaction(EMOJI_PARTY_POPPER) # クラッカー
   elsif flag2
@@ -991,7 +1076,7 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
 end
 
 # Youtube, Twitch の配信情報を流す
-scheduler.cron '2,12,22,32,42,52 * * * *' do
+scheduler.cron '12, 42 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   config = YAML.load(File.open('twitch_secret.yml')).with_indifferent_access
@@ -1013,11 +1098,13 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
     last_checked_time = Time.at(row[0].to_i)
   end
 
-  blacklists = %w[simonshisha32k army_smiley]
+  blacklists = %w[simonshisha32k army_smiley porio_m]
   failed = false
 
   begin
-    client.get_streams(game_id: 490_377, language: 'ja').data.each do |stream|
+    game_name = "Sea of Thieves"
+    game_id = client.get_games({name: game_name}).data&.first.id.to_i
+    client.get_streams(game_id: game_id, language: 'ja').data.each do |stream|
       user_login = stream.instance_variable_get(:@user_login)
       # 前回チェックから現在までに始まった配信でなければ無視する
       next unless (last_checked_time..base_time).cover?(stream.started_at)
@@ -1028,6 +1115,16 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
         # 直近で同じ人の配信を書き込んでいたら再度書かない
         m.text.include?("https://twitch.tv/#{user_login}") && m.timestamp + 8.hours > base_time
       end
+
+      # 何故か別のゲームの配信を取ってきてしまうことがあるので念のため確認
+      next unless stream.game_name.include?(game_name)
+
+      # もし日本語が入ってなかったら無視する
+      regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
+      title_matched = stream.title.match(regex)
+      # 日本語を含まない配信は除外
+      next unless title_matched
+
       next unless recent_streams.empty?
 
       message = "#{stream.user_name}さんの #{stream.game_name} 配信が始まりました
@@ -1168,7 +1265,7 @@ calendar_id_map = [
 ]
 
 # Google カレンダーをイベントに登録する
-scheduler.cron '* */2 * * *' do
+scheduler.cron '0 */2 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
   authorizer.fetch_access_token!
@@ -1212,6 +1309,39 @@ scheduler.cron '* */2 * * *' do
         )
       rescue StandardError => e
         next # 重複するイベントは登録しない
+      end
+    end
+  end
+end
+
+# ブルプロのレイド時間お知らせ
+scheduler.cron '55 * * * *' do
+  next unless COMMAND_PREFIX.include?('jack')
+
+  server_names = ['ブルプロ用', '強制労働組合']
+  server_names.each do |server_name|
+    server_id, server = bot.servers.find { |_id, server| server.name.include?(server_name) }
+    ch = server.text_channels.find { |c| c.name.include?('自動通知') }
+
+    now = Time.now + 5.minutes
+    case now.wday
+    when 0, 6 # 日曜、土曜
+      case now.hour
+      when 8, 12, 16, 20
+        ch.send("レイドイベントはっじまるよー")
+      end
+      # 日曜の1時はレイド
+      if now.wday == 0 && now.hour == 1
+        ch.send("レイドイベントはっじまるよー")
+      end
+    when 1..5 # 月曜～金曜
+      case now.hour
+      when 14,18,22
+        ch.send("レイドイベントはっじまるよー")
+      end
+      # 月曜の1時はレイド
+      if now.wday == 1 && now.hour == 1
+        ch.send("レイドイベントはっじまるよー")
       end
     end
   end
