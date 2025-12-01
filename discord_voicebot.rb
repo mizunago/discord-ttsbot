@@ -1226,21 +1226,6 @@ calendar_id_map = [
     id: 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com',
     server_name: 'Sea of Thieves JPN',
     channel_name: 'イベント情報'
-  },
-  {
-    id: '5spk3hufov8rcorh536do7dnr8@group.calendar.google.com',
-    server_name: 'Skull and Bones Japan',
-    channel_name: 'イベント情報'
-  },
-  {
-    id: '3165c308f066046457982799753a6802ce52436733351bf01ea11549c798b471@group.calendar.google.com',
-    server_name: '強制労働組合',
-    channel_name: 'イベント情報'
-  },
-  {
-    id: '5464be761e37d1aa835b43d4e3246e7cc0f1a5d7feab9fc90aa5e521a85c7a0b@group.calendar.google.com',
-    server_name: '強制労働組合',
-    channel_name: 'ユーザーイベント'
   }
 ]
 
@@ -1359,10 +1344,6 @@ scheduler.cron '0 18 * * *' do
     start_events = response.items.select do |item|
       # 本日開始のイベント
       (base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
-    end
-
-    start_events.response.select do |item|
-      ((base_time - 1.minutes)..(base_time + 1.minutes)).cover?(item.start.date_time)
     end
 
     if start_events.size > 0
