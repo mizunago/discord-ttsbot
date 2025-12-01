@@ -1,4 +1,4 @@
-FROM ruby:2.7.5
+FROM ruby:3.3.10
 RUN apt-get update && apt-get install -y \
     locales \
     locales-all \
@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libopus0 \
     libsodium-dev \
-    software-properties-common \
+#    software-properties-common \
     imagemagick
 RUN apt-get clean \
     && rm -rf /var/lib/apt/lists/*

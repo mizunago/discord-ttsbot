@@ -72,6 +72,7 @@ EMOJI_XBOX = 'Xbox'
 EMOJI_XBOX_GAME_PASS = 'XboxGamePass'
 EMOJI_STEAM = 'Steam'
 EMOJI_MICROSOFT_STORE = 'Microsoft_Store'
+EMOJI_PS = 'PlayStation'
 EMOJI_CONTROLLER = '🎮'
 EMOJI_KEYBOARD = '⌨'
 EMOJI_SMARTPHONE = '📱'
@@ -120,6 +121,8 @@ def emoji_name(event)
     'Steam'
   when EMOJI_MICROSOFT_STORE
     'Microsoft Store'
+  when EMOJI_PS
+    'PlayStation'
   when EMOJI_CONTROLLER
     'コントローラー'
   when EMOJI_KEYBOARD
@@ -207,7 +210,6 @@ class SotTime
 end
 
 class BPTime
-
   def initialize(init_time = nil, diff = 5.minutes)
     @diff = diff
     @init_time = init_time
@@ -230,11 +232,11 @@ class BPTime
   end
 
   def night?
-    min_num % 2 == 0
+    min_num.even?
   end
 
   def noon?
-    min_num % 2 == 1
+    min_num.odd?
   end
 
   def hour
@@ -260,10 +262,10 @@ class BPTime
   end
 
   def print
-    """現在は「#{to_daytime}」です
+    ''"現在は「#{to_daytime}」です
 ゲーム内時刻は大体 #{now}時くらい
 残り#{time_left}分で昼夜が変わるよ
-    """
+    "''
   end
 end
 
@@ -400,7 +402,7 @@ class CustomBot
     File.open("#{NAME_DIR}/#{event.server.resolve_id}_#{event.user.resolve_id}", 'w') do |f|
       f.puts(name.to_s)
     end
-    @txt_channel.send_message("呼び方を#{name}に変更しました。")
+    event.channel.send_message("呼び方を#{name}に変更しました。")
   end
 
   def special_word_voice(event, message)
@@ -450,10 +452,10 @@ class CustomBot
     voice = server.create_channel("#{ship_type}##{format('%02d', room_number)}", :voice, user_limit: size,
                                                                                          parent: cr_ch)
     # カテゴリに親カテゴリの権限とおなじものをセット
-    cr_ch.permission_overwrites = channel.category.permission_overwrites
+    # cr_ch.permission_overwrites = channel.category.permission_overwrites
 
     # チャンネルに親カテゴリの権限と同じものをセット
-    voice.permission_overwrites = channel.category.permission_overwrites
+    # voice.permission_overwrites = channel.category.permission_overwrites
 
     # 順番を自動作成カテゴリの下に配置する
     role_only = server.categories.find { |ch| ch.name.include?('自動作成') }
@@ -496,7 +498,11 @@ class CustomBot
       rescue Discordrb::Errors::UnknownChannel
         nil
       end
-      channel.delete
+      begin
+        channel.delete
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -619,7 +625,7 @@ logger = Logger.new(file, 'daily', datetime_format: '%Y-%m-%d %H:%M:%S')
 db = db_connect_and_create
 
 bot = Discordrb::Commands::CommandBot.new(token: DISCORD_BOT_TOKEN, prefix: "#{COMMAND_PREFIX} ")
-bot_func = CustomBot.new(bot, db, { prefix: COMMAND_PREFIX })
+bot_func = CustomBot.new(bot, db, **{ prefix: COMMAND_PREFIX })
 deepl = DeeplTranslator.new(DEEPL_AUTH_KEY, paid: DEEPL_PRO)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
@@ -695,54 +701,6 @@ end
 
 bot.message do |event|
   bot_func.speak(event, POLLY_VOICE_ID, VOICEVOX_VOICE_ID)
-  if event.server.name.include?('Sea of Thieves JPN')
-    # ニックネームルールをチェック
-    next unless COMMAND_PREFIX.include?('jack')
-
-    user = event.user
-    username = user.username
-    username = user.nick if user.nick
-    message = "
-<@!#{user.id}> へ
-Sea of Thieves JPN Discord サーバーの管理を任されているBOT, ジャック・スパロウだ。
-お願いがあるからよく読んでくれ
-なお、このメッセージに返信してもらっても答えられないから注意してくれ
-
-サーバー内のニックネームついて、変更をお願いします。
-詳しくは、<#916527229628993606> の読み直しをお願いします
-
-①：サーバー内で発言をされる方は
-```
-例：なごなご（nagonago56611）
-```のようにサーバー内ニックネームの変更をお願いします。
-
-※【なまえ】部分には【ひらがな】、【カタカナ】のみが使用できます。**【アルファベット】や【漢字】は使えません**
-※名前とプレイヤー名の間に半角スペースが入っているケースが多数あります
-
-②：サーバー内にて一切発言しない方
-閲覧のみ・お知らせ通知を受け取るだけの為に参加されている方は変更は不要です
-荒れるため、ニックネームを変更していない方の発言は自動で削除しています
-
-正しい名前にもかかわらず、書き込めない場合は、 <@!#{311_482_797_053_444_106}>まで、直接ご連絡ください（すぐに反応できないことがあります）
-"
-    regex = /(?:\p{Hiragana}|\p{Katakana}|[ー－])+([(（])(\w|\s)+([)）])/
-    next if username.include?('Vortex')
-    next if event.channel.parent.name.include?('自動受信')
-    # 削除するメッセージを発言ログに残す
-    ch = event.server.text_channels.find { |ch| ch.name.include?('発言ログ') }
-
-    unless username.match(regex)
-      begin
-        ch.send_message("#{event.channel.name}: #{username} さん（<@!#{user.id}>）の発言、\n> #{event.message}")
-        event.user.pm.send(message)
-        event.message.delete
-      rescue StandardError
-        event.channel.send(message)
-        # event.respond(message)
-        event.message.delete
-      end
-    end
-  end
 end
 
 bot.message(in: SRC_TRANS_CHANNELS) do |event|
@@ -971,6 +929,8 @@ scheduler = Rufus::Scheduler.new
 
 # 公式Twitter を翻訳して流す
 scheduler.cron '2,12,22,32,42,52 * * * *' do
+  next # Twitter から取得できなくなったので処理しない
+
   next unless COMMAND_PREFIX.include?('jack')
 
   config = YAML.load(File.open('twitter_secret.yml')).with_indifferent_access
@@ -1014,6 +974,8 @@ scheduler.cron '2,12,22,32,42,52 * * * *' do
     base_time = Time.now
 
     server_id, server = bot.servers.find { |_id, server| server.name.include?(account[:server_name]) }
+    next if s.text_channels.nil?
+
     ch = server.text_channels.find { |c| c.name.include?(account[:ch_name]) }
 
     user = client.get("https://api.twitter.com/2/users/by?usernames=#{user_name}&user.fields=created_at,profile_image_url&expansions=pinned_tweet_id&tweet.fields=author_id,created_at")
@@ -1081,10 +1043,16 @@ scheduler.cron '12, 42 * * * *' do
 
   config = YAML.load(File.open('twitch_secret.yml')).with_indifferent_access
 
-  client = Twitch::Client.new(
-    client_id: config[:client_id],
-    client_secret: config[:client_secret]
+  tokens = TwitchOAuth2::Tokens.new(
+    client: {
+      client_id: config[:client_id],
+      client_secret: config[:client_secret]
+    }
   )
+
+  client = Twitch::Client.new(tokens: tokens)
+
+  next if s.text_channels.nil?
 
   ch = s.text_channels.find { |c| c.name.include?('配信情報') }
 
@@ -1098,12 +1066,12 @@ scheduler.cron '12, 42 * * * *' do
     last_checked_time = Time.at(row[0].to_i)
   end
 
-  blacklists = %w[simonshisha32k army_smiley porio_m]
+  blacklists = %w[simonshisha32k army_smiley porio_m happy_ajay]
   failed = false
 
   begin
-    game_name = "Sea of Thieves"
-    game_id = client.get_games({name: game_name}).data&.first.id.to_i
+    game_name = 'Sea of Thieves'
+    game_id = client.get_games({ name: game_name }).data&.first&.id.to_i
     client.get_streams(game_id: game_id, language: 'ja').data.each do |stream|
       user_login = stream.instance_variable_get(:@user_login)
       # 前回チェックから現在までに始まった配信でなければ無視する
@@ -1256,11 +1224,23 @@ authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
 calendar_id_map = [
   {
     id: 'ls7g7e2bnqmfdq846r5f59mbjo@group.calendar.google.com',
-    server_name: 'Sea of Thieves JPN'
+    server_name: 'Sea of Thieves JPN',
+    channel_name: 'イベント情報'
   },
   {
     id: '5spk3hufov8rcorh536do7dnr8@group.calendar.google.com',
-    server_name: 'Skull and Bones Japan'
+    server_name: 'Skull and Bones Japan',
+    channel_name: 'イベント情報'
+  },
+  {
+    id: '3165c308f066046457982799753a6802ce52436733351bf01ea11549c798b471@group.calendar.google.com',
+    server_name: '強制労働組合',
+    channel_name: 'イベント情報'
+  },
+  {
+    id: '5464be761e37d1aa835b43d4e3246e7cc0f1a5d7feab9fc90aa5e521a85c7a0b@group.calendar.google.com',
+    server_name: '強制労働組合',
+    channel_name: 'ユーザーイベント'
   }
 ]
 
@@ -1284,7 +1264,9 @@ scheduler.cron '0 */2 * * *' do
                                    time_min: base_time.rfc3339)
     start_events = response.items
     start_events.each do |item|
-      # 開始済みのイベントはイベント登録しない
+      # イベント情報のみ登録する
+      next if calendar[:channel_name] != 'イベント情報'
+      # 開始済みのイベントはイベント登録できないのでしない
       next if item.start.date_time.to_time < Time.now
 
       begin
@@ -1314,35 +1296,43 @@ scheduler.cron '0 */2 * * *' do
   end
 end
 
-# ブルプロのレイド時間お知らせ
-scheduler.cron '55 * * * *' do
+# Discordのチャットに開始直前のイベント情報を流す
+scheduler.cron '*/15 * * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
-  server_names = ['ブルプロ用', '強制労働組合']
-  server_names.each do |server_name|
-    server_id, server = bot.servers.find { |_id, server| server.name.include?(server_name) }
-    ch = server.text_channels.find { |c| c.name.include?('自動通知') }
+  authorizer.fetch_access_token!
 
-    now = Time.now + 5.minutes
-    case now.wday
-    when 0, 6 # 日曜、土曜
-      case now.hour
-      when 8, 12, 16, 20
-        ch.send("レイドイベントはっじまるよー")
-      end
-      # 日曜の1時はレイド
-      if now.wday == 0 && now.hour == 1
-        ch.send("レイドイベントはっじまるよー")
-      end
-    when 1..5 # 月曜～金曜
-      case now.hour
-      when 14,18,22
-        ch.send("レイドイベントはっじまるよー")
-      end
-      # 月曜の1時はレイド
-      if now.wday == 1 && now.hour == 1
-        ch.send("レイドイベントはっじまるよー")
-      end
+  service = Google::Apis::CalendarV3::CalendarService.new
+  service.authorization = authorizer
+
+  base_time = Time.now
+  calendar_id_map.each do |calendar|
+    server_id, server = bot.servers.find { |_id, server| server.name == calendar[:server_name] }
+    next if server.nil?
+    next if server.text_channels.nil?
+
+    ch = server.text_channels.find { |c| c.name.include?(calendar[:channel_name]) }
+    response = service.list_events(calendar[:id],
+                                   max_results: 10,
+                                   single_events: true,
+                                   order_by: 'startTime',
+                                   time_min: base_time.rfc3339)
+
+    now_starting_events = response.items.select do |item|
+      ((base_time - 1.minutes)..(base_time + 1.minutes)).cover?(item.start.date_time.to_time)
+    end
+
+    now_starting_events.each do |item|
+      next if item.nil?
+
+      message = "◆◆◆イベント開始◆◆◆
+  ■イベント名: #{item.summary}
+  ■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始: <t:#{item.start.date_time.to_time.to_i}:R> 終了: <t:#{item.end.date_time.to_time.to_i}:R>
+  ■内容：
+#{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
+
+  "
+      m = ch.send_message(message)
     end
   end
 end
@@ -1351,55 +1341,64 @@ end
 scheduler.cron '0 18 * * *' do
   next unless COMMAND_PREFIX.include?('jack')
 
-  ch = s.text_channels.find { |c| c.name.include?('イベント情報') }
   authorizer.fetch_access_token!
 
   service = Google::Apis::CalendarV3::CalendarService.new
   service.authorization = authorizer
 
   base_time = DateTime.now
-  calendar_id = calendar_id_map[0][:id]
-  response = service.list_events(calendar_id,
-                                 max_results: 10,
-                                 single_events: true,
-                                 order_by: 'startTime',
-                                 time_min: base_time.rfc3339)
-  start_events = response.items.select do |item|
-    # 本日開始のイベント
-    (base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
-  end
+  calendar_id_map.each do |calendar|
+    server_id, server = bot.servers.find { |_id, server| server.name == calendar[:server_name] }
+    ch = server.text_channels.find { |c| c.name.include?(calendar[:channel_name]) }
+    response = service.list_events(calendar[:id],
+                                   max_results: 10,
+                                   single_events: true,
+                                   order_by: 'startTime',
+                                   time_min: base_time.rfc3339)
 
-  if start_events.size > 0
-    role = s.roles.find { |r| r.name == 'イベントハンター' }
-    ch.send_message("<@&#{role.id}> のみんな！新しいイベント情報だ！")
-    ch.send_message('---- 本日開始のイベント ----')
-  end
+    start_events = response.items.select do |item|
+      # 本日開始のイベント
+      (base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
+    end
 
-  start_events.each do |item|
-    message = "■イベント名: #{item.summary}
-■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始: <t:#{item.start.date_time.to_time.to_i}:R> 終了: <t:#{item.end.date_time.to_time.to_i}:R>
-■内容：
+    start_events.response.select do |item|
+      ((base_time - 1.minutes)..(base_time + 1.minutes)).cover?(item.start.date_time)
+    end
+
+    if start_events.size > 0
+      role = server.roles.find { |r| r.name == 'イベントハンター' }
+      ch.send_message("<@&#{role.id}> のみんな！新しいイベント情報だ！") if role
+      ch.send_message('---- 本日開始のイベント ----')
+    end
+
+    start_events.each do |item|
+      next if item.nil?
+
+      message = "■イベント名: #{item.summary}
+  ■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 開始: <t:#{item.start.date_time.to_time.to_i}:R> 終了: <t:#{item.end.date_time.to_time.to_i}:R>
+  ■内容：
 #{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
-----
-"
-    m = ch.send_message(message)
-  end
+  ----
+  "
+      m = ch.send_message(message)
+    end
 
-  end_events = response.items.select do |item|
-    # 明日終了のイベント
-    ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time) && !(base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
-  end
+    end_events = response.items.select do |item|
+      # 明日終了のイベント
+      ((base_time.to_date + 1.day)..(base_time.to_date + 2.day)).cover?(item.end.date_time) && !(base_time.to_date..(base_time.to_date + 1.day)).cover?(item.start.date_time)
+    end
 
-  ch.send_message('---- 明日終了のイベント ----') if end_events.size > 0
+    ch.send_message('---- 明日終了のイベント ----') if end_events.size > 0
 
-  end_events.each do |item|
-    message = "■イベント名: #{item.summary}
-■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 終了まで <t:#{item.end.date_time.to_time.to_i}:R>
-■内容：
+    end_events.each do |item|
+      message = "■イベント名: #{item.summary}
+  ■日時： <t:#{item.start.date_time.to_time.to_i}:F> - <t:#{item.end.date_time.to_time.to_i}:F> 終了まで <t:#{item.end.date_time.to_time.to_i}:R>
+  ■内容：
 #{item.description ? Sanitize.clean(item.description&.gsub('<br>', "\n")) : '記載なし'}
-----
-"
-    m = ch.send_message(message)
+  ----
+  "
+      m = ch.send_message(message)
+    end
   end
 end
 

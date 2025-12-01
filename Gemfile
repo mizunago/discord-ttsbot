@@ -14,8 +14,9 @@ gem 'google-cloud-vision'
 gem 'rufus-scheduler'
 gem 'sanitize'
 gem 'simple_twitter'
-gem 'sqlite3'
-gem 'twitch-api', git: 'https://github.com/mauricew/ruby-twitch-api'
+gem 'sqlite3', '< 1.7.0'
+# gem 'twitch-api', git: 'https://github.com/mauricew/ruby-twitch-api'
+gem 'twitch-api'
 
 group :development do
   gem 'rubocop', require: false
