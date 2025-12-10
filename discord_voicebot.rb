@@ -1329,6 +1329,7 @@ scheduler.cron '*/15 * * * *' do
                                    time_min: base_time.rfc3339)
 
     now_starting_events = response.items.select do |item|
+      next if item.start.date_time.nil?
       ((base_time - 1.minutes)..(base_time + 1.minutes)).cover?(item.start.date_time.to_time)
     end
 
