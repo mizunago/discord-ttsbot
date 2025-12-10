@@ -79,6 +79,35 @@ EMOJI_SMARTPHONE = '📱'
 EMOJI_MICMUTE = '🔇'
 EMOJI_BIGINNER = '🔰'
 
+def probable_japanese?(text)
+  # 1. 空文字やnilはfalse
+  return false if text.nil? || text.strip.empty?
+
+  # --- 定義 ---
+  # \p{Hiragana}: ひらがな
+  # \p{Katakana}: カタカナ
+  # \p{Han}: 漢字
+
+  # 2. 【必須】ひらがなが一切含まれていなければ、日本語の文章ではないとみなす
+  #    (これで中国語や、英語のみの文章を弾きます)
+  return false unless text.match?(/\p{Hiragana}/)
+
+  # 3. 【高精度化】「意味のある日本語」らしさを判定
+  #    単発のひらがな（絵文字代わり）ではなく、言語的な特徴を探す
+  #    パターン:
+  #    - ひらがなが2文字以上連続している (例: "あした", "です")
+  #    - または、代表的な助詞が単独で存在する (例: "の", "に", "て", "を", "が")
+  #    ※ (?=...) は先読みですが、ここでは単純なマッチで十分です
+  has_grammatical_feature = text.match?(/(\p{Hiragana}{2,}|[のにてをがはへ])/)
+
+  return false unless has_grammatical_feature
+
+  # 4. 【オプション】明らかに日本語の文章構造として不正な文字比率などを弾く
+  #    （例: 文字列の半分以上が「」などの不明な記号など。ここではシンプルにtrueを返します）
+
+  true
+end
+
 def group_div(user_num, number_of_member)
   sub_num = 0
   return sub_num if (user_num % (number_of_member - 1)).zero?
@@ -1141,7 +1170,7 @@ scheduler.cron '12, 42 * * * *' do
     # デバッグ
     puts "https://www.googleapis.com/#{uri.request_uri}"
 
-    next if body[:items].nil?
+    next if body[:items].nil? || body[:items].empty?
 
     body[:items].each do |stream|
       url = "https://www.youtube.com/watch?v=#{stream[:id][:videoId]}"
@@ -1155,15 +1184,11 @@ scheduler.cron '12, 42 * * * *' do
         id: stream[:id][:videoId]
       }
 
-      # タイトルと概要欄に日本語が含まれているか？
-      # regex = /(?:\p{Hiragana}|\p{Katakana}|[一-龠々])/
-      regex = /(?:\p{Hiragana}+|\p{Katakana}+)/
-      title_matched = title.match(regex)
-      description_matched = description.match(regex)
-      # 日本語を含まない配信は除外
-      next unless title_matched || description_matched
-      # 日本語が３文字以上なければ除外
-      next unless title_matched.to_s.length >= 3 || description_matched.to_s.length >= 3
+      # タイトル、もしくは概要欄に日本語が使われていない場合はスキップ
+      unless probable_japanese?(title) || probable_japanese?(description)
+        next
+      end
+
 
       # 配信開始時刻を調べる
       uri2 = URI.parse('https://www.googleapis.com/youtube/v3/videos')
