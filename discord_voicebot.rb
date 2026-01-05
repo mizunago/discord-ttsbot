@@ -659,29 +659,16 @@ deepl = DeeplTranslator.new(DEEPL_AUTH_KEY, paid: DEEPL_PRO)
 
 puts "#{COMMAND_PREFIX} connect で呼んでください"
 
-bot.register_application_command(:ping, 'BOT が生きていれば返事をします') do |cmd|
-  cmd.string('message', '送信されたメッセージをオウムがえしします')
-end
-
 bot.application_command(:ping) do |event|
   event.respond(content: "pong: #{event.options['message']}")
-end
-
-bot.register_application_command(:connect, '読み上げbotを接続中の音声チャンネルに参加させます') do |cmd|
 end
 
 bot.application_command(:connect) do |event|
   bot_func.connect(event)
 end
 
-bot.register_application_command(:disconnect, '音声チャンネルに参加している読み上げbotを切断します') do |cmd|
-end
-
 bot.application_command(:disconnect) do |event|
   bot_func.destroy(event)
-end
-
-bot.register_application_command(:in_game_time, 'ゲーム内の時間を表示します') do |cmd|
 end
 
 bot.application_command(:in_game_time) do |event|
@@ -952,6 +939,20 @@ end
 
 bot.run :async
 # bot.run
+bot.servers.each do |id, server|
+  bot.register_application_command(:ping, 'BOT が生きていれば返事をします') do |cmd|
+    cmd.string('message', '送信されたメッセージをオウムがえしします')
+  end
+  bot.register_application_command(:connect, '読み上げbotを接続中の音声チャンネルに参加させます', server_id: id) do |cmd|
+  end
+  bot.register_application_command(:disconnect, '音声チャンネルに参加している読み上げbotを切断します', server_id: id) do |cmd|
+  end
+
+  bot.register_application_command(:in_game_time, 'ゲーム内の時間を表示します', server_id: id) do |cmd|
+  end
+end
+
+
 s = bot.servers[406_456_641_593_016_320]
 
 scheduler = Rufus::Scheduler.new
@@ -1202,17 +1203,21 @@ scheduler.cron '12, 42 * * * *' do
         raise
       end
 
-      recent_streams = histories&.select do |m|
-        # 直近で同じ人の配信を書き込んでいたら再度書かない
-        m.text.include?("https://www.youtube.com/watch?v=#{stream[:id][:videoId]}") && m.timestamp + 6.hours > base_time
-      end
-      next unless recent_streams.empty?
+      puts "https://www.youtube.com/watch?v=#{stream[:id][:videoId]}"
 
-      # 前回チェックから現在までに始まった配信でなければ無視する
-      next unless (last_checked_time..base_time).cover?(start_at)
+      #histories = ch.history(10)
+      #recent_streams = histories&.select do |m|
+      #  true
+      #  # 直近で同じ人の配信を書き込んでいたら再度書かない
+      #  m.text.include?(channelTitle) && m.timestamp + 6.hours > base_time
+      #end
+      ##next unless recent_streams.empty?
 
-      # 簡易ブラックリスト
-      next if channelTitle.include?('INNIN MAKERS')
+      ## 前回チェックから現在までに始まった配信でなければ無視する
+      #next unless (last_checked_time..base_time).cover?(start_at)
+
+      ## 簡易ブラックリスト
+      #next if channelTitle.include?('INNIN MAKERS')
 
       message = "#{channelTitle}さんの配信が始まりました
   配信名： #{title}
